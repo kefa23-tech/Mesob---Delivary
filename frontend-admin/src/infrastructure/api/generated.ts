@@ -132,6 +132,70 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/group-carts/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getGroupCart"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/group-carts/{token}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["addGroupCartItem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/group-carts/{token}/items/{item_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["removeGroupCartItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/group-carts/{token}/lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["lockGroupCart"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/orders": {
         parameters: {
             query?: never;
@@ -361,15 +425,72 @@ export interface components {
         CreateGroupCartRequest: {
             /** Format: uuid */
             restaurant_id: string;
-            invitee_phone?: string;
+            display_name?: string;
+            user_id?: string;
         };
-        GroupCart: {
+        AddGroupCartItemRequest: {
             /** Format: uuid */
-            id: string;
+            menu_item_id: string;
             /** Format: uuid */
             restaurant_id: string;
-            status: string;
-            items?: components["schemas"]["OrderItem"][];
+            quantity: number;
+            options?: components["schemas"]["SelectedOption"][];
+        };
+        SelectedOption: {
+            group_id: string;
+            group_name?: string;
+            option_id: string;
+            option_name?: string;
+            /** Format: int64 */
+            price_delta_minor: number;
+        };
+        Participant: {
+            user_id?: string;
+            display_name: string;
+        };
+        ParticipantSummary: {
+            participant: components["schemas"]["Participant"];
+            /** Format: int64 */
+            subtotal_minor: number;
+            /** Format: int64 */
+            delivery_fee_minor: number;
+            /** Format: int64 */
+            total_minor: number;
+        };
+        GroupCartItem: {
+            id: string;
+            menu_item_id: string;
+            name: string;
+            /** Format: int64 */
+            unit_price_minor: number;
+            quantity: number;
+            options?: components["schemas"]["SelectedOption"][];
+            participant: components["schemas"]["Participant"];
+            /** Format: int64 */
+            line_total_minor: number;
+        };
+        GroupCart: {
+            token: string;
+            /** Format: uuid */
+            restaurant_id: string;
+            host: components["schemas"]["Participant"];
+            /** @enum {string} */
+            status: "open" | "locked";
+            items: components["schemas"]["GroupCartItem"][];
+            /** Format: int64 */
+            subtotal_minor: number;
+            /** Format: int64 */
+            delivery_fee_minor: number;
+            /** Format: int64 */
+            delivery_discount_minor: number;
+            /** Format: int64 */
+            total_minor: number;
+            participants: components["schemas"]["ParticipantSummary"][];
+        };
+        GroupCartResponse: {
+            cart: components["schemas"]["GroupCart"];
+            /** Format: uri */
+            share_url: string;
         };
         CreateOrderRequest: {
             /** Format: uuid */
@@ -478,11 +599,22 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
+        /** @description Resource not found */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
     };
     parameters: {
         RestaurantId: string;
         DisputeId: string;
         JobId: string;
+        CartToken: string;
+        CartItemId: string;
         Lat: number;
         Lng: number;
         Page: number;
@@ -707,7 +839,101 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["GroupCart"];
+                    "application/json": components["schemas"]["GroupCartResponse"];
+                };
+            };
+        };
+    };
+    getGroupCart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: components["parameters"]["CartToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current group cart */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupCartResponse"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    addGroupCartItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: components["parameters"]["CartToken"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AddGroupCartItemRequest"];
+            };
+        };
+        responses: {
+            /** @description Item added */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupCartResponse"];
+                };
+            };
+        };
+    };
+    removeGroupCartItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: components["parameters"]["CartToken"];
+                item_id: components["parameters"]["CartItemId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Item removed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupCartResponse"];
+                };
+            };
+        };
+    };
+    lockGroupCart: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: components["parameters"]["CartToken"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cart locked */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupCartResponse"];
                 };
             };
         };

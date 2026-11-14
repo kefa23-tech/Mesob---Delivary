@@ -26,6 +26,10 @@ import (
 	catalogusecase "github.com/mesob-delivery/backend/internal/catalog/usecase"
 	healthhttp "github.com/mesob-delivery/backend/internal/health/adapter/http"
 	healthusecase "github.com/mesob-delivery/backend/internal/health/usecase"
+	ordershttp "github.com/mesob-delivery/backend/internal/orders/adapter/http"
+	orderspostgres "github.com/mesob-delivery/backend/internal/orders/adapter/postgres"
+	ordersredis "github.com/mesob-delivery/backend/internal/orders/adapter/redis"
+	ordersusecase "github.com/mesob-delivery/backend/internal/orders/usecase"
 	"github.com/mesob-delivery/backend/internal/platform/httpmiddleware"
 )
 
@@ -37,6 +41,7 @@ type config struct {
 	JWTSecret          string
 	SMSGatewayURL      string
 	WhatsAppGatewayURL string
+	WebAppURL          string
 }
 
 func main() {
@@ -49,6 +54,7 @@ func main() {
 		JWTSecret:          envOr("JWT_SECRET", "development-only-change-me"),
 		SMSGatewayURL:      os.Getenv("SMS_GATEWAY_URL"),
 		WhatsAppGatewayURL: os.Getenv("WHATSAPP_GATEWAY_URL"),
+		WebAppURL:          envOr("WEB_APP_URL", "http://localhost:3000/en"),
 	}, logger); err != nil {
 		logger.Error("api stopped", "error", err)
 		os.Exit(1)
@@ -77,6 +83,13 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	catalogRepository := catalogpostgres.NewRepository(database)
 	catalogService := catalogusecase.NewServiceWithMenu(catalogRepository, catalogRepository, catalogCache)
 	catalogHandler := cataloghttp.NewHandler(catalogService)
+	groupCartStore, err := ordersredis.New(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer groupCartStore.Close()
+	groupCartService := ordersusecase.NewGroupCartService(groupCartStore, orderspostgres.NewRepository(database), 0)
+	groupCartHandler := ordershttp.NewHandler(groupCartService, cfg.WebAppURL)
 	users := authpostgres.NewUserRepository(database)
 	authService := authusecase.NewService(authusecase.Dependencies{
 		OTPs:    redisStore,
@@ -99,6 +112,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1", healthHandler.Routes())
 	router.Mount("/api/v1/auth", authHandler.Routes())
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())
+	router.Mount("/api/v1/group-carts", groupCartHandler.Routes())
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)

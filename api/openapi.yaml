@@ -88,11 +88,40 @@ paths:
       tags: [Group Cart]
       operationId: createGroupCart
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGroupCartRequest' } } } }
-      responses: { '201': { description: Created group cart, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCart' } } } } }
+      responses: { '201': { description: Created group cart, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCartResponse' } } } } }
     get:
       tags: [Group Cart]
       operationId: listGroupCarts
       responses: { '200': { description: Group carts, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/GroupCart' } } } } } } } }
+  /group-carts/{token}:
+    get:
+      tags: [Group Cart]
+      security: []
+      operationId: getGroupCart
+      parameters: [{ $ref: '#/components/parameters/CartToken' }]
+      responses: { '200': { description: Current group cart, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCartResponse' } } } }, '404': { $ref: '#/components/responses/NotFound' } }
+  /group-carts/{token}/items:
+    post:
+      tags: [Group Cart]
+      security: []
+      operationId: addGroupCartItem
+      parameters: [{ $ref: '#/components/parameters/CartToken' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AddGroupCartItemRequest' } } } }
+      responses: { '201': { description: Item added, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCartResponse' } } } } }
+  /group-carts/{token}/items/{item_id}:
+    delete:
+      tags: [Group Cart]
+      security: []
+      operationId: removeGroupCartItem
+      parameters: [{ $ref: '#/components/parameters/CartToken' }, { $ref: '#/components/parameters/CartItemId' }]
+      responses: { '200': { description: Item removed, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCartResponse' } } } } }
+  /group-carts/{token}/lock:
+    post:
+      tags: [Group Cart]
+      security: []
+      operationId: lockGroupCart
+      parameters: [{ $ref: '#/components/parameters/CartToken' }]
+      responses: { '200': { description: Cart locked, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCartResponse' } } } } }
   /orders:
     post:
       tags: [Orders]
@@ -149,6 +178,8 @@ components:
     RestaurantId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     DisputeId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     JobId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    CartToken: { name: token, in: path, required: true, schema: { type: string } }
+    CartItemId: { name: item_id, in: path, required: true, schema: { type: string } }
     Lat: { name: lat, in: query, schema: { type: number, format: double } }
     Lng: { name: lng, in: query, schema: { type: number, format: double } }
     Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
@@ -160,6 +191,7 @@ components:
   responses:
     BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     Unauthorized: { description: Authentication failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    NotFound: { description: Resource not found, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   schemas:
     OtpRequest: { type: object, required: [phone], properties: { phone: { type: string, example: '+251911000000' }, channel: { type: string, enum: [sms, whatsapp], default: sms } } }
     OtpVerifyRequest: { type: object, required: [phone, code], properties: { phone: { type: string }, code: { type: string, minLength: 4, maxLength: 8 } } }
@@ -174,8 +206,14 @@ components:
     MenuItem: { type: object, required: [id, name, price_minor, is_available], properties: { id: { type: string, format: uuid }, name: { type: string }, description: { type: string }, image_url: { type: string, format: uri }, price_minor: { type: integer, format: int64 }, stock_limit: { type: integer }, is_available: { type: boolean }, option_groups: { type: array, items: { $ref: '#/components/schemas/OptionGroup' } } } }
     OptionGroup: { type: object, required: [id, name, min_select, max_select, options], properties: { id: { type: string, format: uuid }, name: { type: string }, min_select: { type: integer, minimum: 0 }, max_select: { type: integer, minimum: 0 }, options: { type: array, items: { $ref: '#/components/schemas/Option' } } } }
     Option: { type: object, required: [id, name, price_delta, is_available], properties: { id: { type: string, format: uuid }, name: { type: string }, price_delta: { type: integer, format: int64 }, is_available: { type: boolean } } }
-    CreateGroupCartRequest: { type: object, required: [restaurant_id], properties: { restaurant_id: { type: string, format: uuid }, invitee_phone: { type: string } } }
-    GroupCart: { type: object, required: [id, restaurant_id, status], properties: { id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, status: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } } } }
+    CreateGroupCartRequest: { type: object, required: [restaurant_id], properties: { restaurant_id: { type: string, format: uuid }, display_name: { type: string }, user_id: { type: string } } }
+    AddGroupCartItemRequest: { type: object, required: [menu_item_id, restaurant_id, quantity], properties: { menu_item_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1 }, options: { type: array, items: { $ref: '#/components/schemas/SelectedOption' } } } }
+    SelectedOption: { type: object, required: [group_id, option_id, price_delta_minor], properties: { group_id: { type: string }, group_name: { type: string }, option_id: { type: string }, option_name: { type: string }, price_delta_minor: { type: integer, format: int64 } } }
+    Participant: { type: object, required: [display_name], properties: { user_id: { type: string }, display_name: { type: string } } }
+    ParticipantSummary: { type: object, required: [participant, subtotal_minor, delivery_fee_minor, total_minor], properties: { participant: { $ref: '#/components/schemas/Participant' }, subtotal_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 }, total_minor: { type: integer, format: int64 } } }
+    GroupCartItem: { type: object, required: [id, menu_item_id, name, unit_price_minor, quantity, participant, line_total_minor], properties: { id: { type: string }, menu_item_id: { type: string }, name: { type: string }, unit_price_minor: { type: integer, format: int64 }, quantity: { type: integer }, options: { type: array, items: { $ref: '#/components/schemas/SelectedOption' } }, participant: { $ref: '#/components/schemas/Participant' }, line_total_minor: { type: integer, format: int64 } } }
+    GroupCart: { type: object, required: [token, restaurant_id, host, status, items, subtotal_minor, delivery_fee_minor, delivery_discount_minor, total_minor, participants], properties: { token: { type: string }, restaurant_id: { type: string, format: uuid }, host: { $ref: '#/components/schemas/Participant' }, status: { type: string, enum: [open, locked] }, items: { type: array, items: { $ref: '#/components/schemas/GroupCartItem' } }, subtotal_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 }, delivery_discount_minor: { type: integer, format: int64 }, total_minor: { type: integer, format: int64 }, participants: { type: array, items: { $ref: '#/components/schemas/ParticipantSummary' } } } }
+    GroupCartResponse: { type: object, required: [cart, share_url], properties: { cart: { $ref: '#/components/schemas/GroupCart' }, share_url: { type: string, format: uri } } }
     CreateOrderRequest: { type: object, required: [restaurant_id, address_id, items], properties: { restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, group_cart_id: { type: string, format: uuid }, items: { type: array, items: { $ref: '#/components/schemas/OrderItemInput' } } } }
     OrderItemInput: { type: object, required: [menu_item_id, quantity], properties: { menu_item_id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1 }, options: { type: array, items: { type: object, additionalProperties: true } } } }
     OrderItem: { type: object, required: [item_name, unit_price_minor, quantity], properties: { item_name: { type: string }, unit_price_minor: { type: integer, format: int64 }, quantity: { type: integer }, line_total_minor: { type: integer, format: int64 } } }

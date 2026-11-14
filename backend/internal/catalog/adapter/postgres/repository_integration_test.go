@@ -142,7 +142,8 @@ func runMigrationsWhenReady(ctx context.Context, databaseURL, migrationsPath str
 		message := lastErr.Error()
 		if !strings.Contains(message, "database system is starting up") &&
 			!strings.Contains(message, "connection refused") &&
-			!strings.Contains(message, "connection reset") {
+			!strings.Contains(message, "connection reset") &&
+			!strings.Contains(message, "EOF") {
 			return lastErr
 		}
 		select {
