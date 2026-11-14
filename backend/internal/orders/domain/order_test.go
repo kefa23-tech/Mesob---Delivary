@@ -41,3 +41,29 @@ func TestLockedCartCannotChange(t *testing.T) {
 		t.Fatalf("expected lock error, got %v", err)
 	}
 }
+
+func TestOrderStateMachineAllowsOnlyForwardTransitions(t *testing.T) {
+	order := domain.Order{Status: domain.OrderPending}
+	if err := order.Transition(domain.OrderConfirmed); err != nil {
+		t.Fatal(err)
+	}
+	if err := order.Transition(domain.OrderDelivered); !errors.Is(err, domain.ErrInvalidOrder) {
+		t.Fatalf("expected invalid transition error, got %v", err)
+	}
+}
+
+func TestCheckoutRequiresPaymentAddressAndAStandardOrGroupCart(t *testing.T) {
+	valid := domain.CheckoutRequest{AddressID: "address", PaymentMethod: domain.PaymentCOD, Items: []domain.CheckoutItem{{MenuItemID: "item", Quantity: 1}}}
+	if err := domain.ValidateCheckout(valid); err != nil {
+		t.Fatalf("valid checkout rejected: %v", err)
+	}
+	valid.Items = nil
+	valid.GroupCartToken = "locked-token"
+	if err := domain.ValidateCheckout(valid); err != nil {
+		t.Fatalf("valid group checkout rejected: %v", err)
+	}
+	valid.GroupCartToken = ""
+	if err := domain.ValidateCheckout(valid); !errors.Is(err, domain.ErrInvalidOrder) {
+		t.Fatalf("expected invalid checkout, got %v", err)
+	}
+}

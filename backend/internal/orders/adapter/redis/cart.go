@@ -3,6 +3,8 @@ package redis
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -20,8 +22,77 @@ func New(url string) (*CartStore, error) {
 	}
 	return &CartStore{client: redisclient.NewClient(options)}, nil
 }
-func (s *CartStore) Close() error { return s.client.Close() }
-func cartKey(token string) string { return "mesob:group-cart:" + token }
+func (s *CartStore) Close() error           { return s.client.Close() }
+func cartKey(token string) string           { return "mesob:group-cart:" + token }
+func cartConversionKey(token string) string { return "mesob:group-cart-conversion:" + token }
+
+func idempotencyKey(userID, key string) string {
+	digest := sha256.Sum256([]byte(userID + ":" + key))
+	return "mesob:order-idempotency:" + base64.RawURLEncoding.EncodeToString(digest[:])
+}
+
+func (s *CartStore) Begin(ctx context.Context, userID, key string) ([]byte, bool, error) {
+	redisKey := idempotencyKey(userID, key)
+	claimed, err := s.client.SetNX(ctx, redisKey, "processing", domain.OrderIdempotencyTTL).Result()
+	if err != nil {
+		return nil, false, err
+	}
+	if claimed {
+		return nil, false, nil
+	}
+	value, err := s.client.Get(ctx, redisKey).Bytes()
+	if err == redisclient.Nil {
+		// The entry expired between SETNX and GET; compete for a fresh claim.
+		claimed, err = s.client.SetNX(ctx, redisKey, "processing", domain.OrderIdempotencyTTL).Result()
+		if err != nil {
+			return nil, false, err
+		}
+		return nil, !claimed, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	if string(value) == "processing" {
+		return nil, true, nil
+	}
+	return value, false, nil
+}
+
+func (s *CartStore) Complete(ctx context.Context, userID, key string, body []byte) error {
+	return s.client.Set(ctx, idempotencyKey(userID, key), body, domain.OrderIdempotencyTTL).Err()
+}
+
+func (s *CartStore) Release(ctx context.Context, userID, key string) error {
+	return s.client.Del(ctx, idempotencyKey(userID, key)).Err()
+}
+
+func (s *CartStore) ExpireConverted(ctx context.Context, token string) error {
+	return s.client.Del(ctx, cartKey(token), cartConversionKey(token)).Err()
+}
+
+func (s *CartStore) ClaimConversion(ctx context.Context, token string) (domain.GroupCart, error) {
+	claimed, err := s.client.SetNX(ctx, cartConversionKey(token), "converting", domain.OrderIdempotencyTTL).Result()
+	if err != nil {
+		return domain.GroupCart{}, err
+	}
+	if !claimed {
+		return domain.GroupCart{}, domain.ErrCartLocked
+	}
+	cart, err := s.Get(ctx, token)
+	if err != nil {
+		_ = s.ReleaseConversion(context.Background(), token)
+		return domain.GroupCart{}, err
+	}
+	if cart.Status != domain.CartLocked || len(cart.Items) == 0 {
+		_ = s.ReleaseConversion(context.Background(), token)
+		return domain.GroupCart{}, domain.ErrCartLocked
+	}
+	return cart, nil
+}
+
+func (s *CartStore) ReleaseConversion(ctx context.Context, token string) error {
+	return s.client.Del(ctx, cartConversionKey(token)).Err()
+}
 func (s *CartStore) Create(ctx context.Context, cart domain.GroupCart, ttl time.Duration) (domain.GroupCart, error) {
 	tokenBytes := make([]byte, 18)
 	if _, err := rand.Read(tokenBytes); err != nil {

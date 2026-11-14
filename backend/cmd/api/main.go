@@ -90,6 +90,9 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	defer groupCartStore.Close()
 	groupCartService := ordersusecase.NewGroupCartService(groupCartStore, orderspostgres.NewRepository(database), 0)
 	groupCartHandler := ordershttp.NewHandler(groupCartService, cfg.WebAppURL)
+	orderRepository := orderspostgres.NewRepository(database)
+	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore)
+	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService)
 	users := authpostgres.NewUserRepository(database)
 	authService := authusecase.NewService(authusecase.Dependencies{
 		OTPs:    redisStore,
@@ -113,6 +116,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1/auth", authHandler.Routes())
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())
 	router.Mount("/api/v1/group-carts", groupCartHandler.Routes())
+	router.Mount("/api/v1/orders", checkoutHandler.Routes())
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)

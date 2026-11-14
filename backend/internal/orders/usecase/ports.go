@@ -13,12 +13,20 @@ type CartRepository interface {
 	RemoveItem(context.Context, string, string) (domain.GroupCart, error)
 	Lock(context.Context, string) (domain.GroupCart, error)
 }
-type Inventory interface {
-	Reserve(context.Context, []domain.LineItem) error
-	Release(context.Context, []domain.LineItem) error
+type CheckoutRepository interface {
+	Place(context.Context, string, string, domain.CheckoutRequest, []domain.CartItem) (domain.Order, error)
 }
-type OrderRepository interface {
-	Create(context.Context, domain.Order) error
+
+type IdempotencyStore interface {
+	Begin(context.Context, string, string) (cached []byte, inFlight bool, err error)
+	Complete(context.Context, string, string, []byte) error
+	Release(context.Context, string, string) error
+}
+
+type GroupCartConverter interface {
+	ClaimConversion(context.Context, string) (domain.GroupCart, error)
+	ReleaseConversion(context.Context, string) error
+	ExpireConverted(context.Context, string) error
 }
 
 type MenuCatalog interface {

@@ -126,8 +126,17 @@ paths:
     post:
       tags: [Orders]
       operationId: createOrder
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
       requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateOrderRequest' } } } }
-      responses: { '201': { description: Created order, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } } }
+      responses:
+        '201': { description: Created order or cached replay, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { description: Idempotency key is in flight, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+        '422': { description: Restaurant, delivery area, item, or stock validation failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     get:
       tags: [Orders]
       operationId: listOrders
@@ -214,8 +223,8 @@ components:
     GroupCartItem: { type: object, required: [id, menu_item_id, name, unit_price_minor, quantity, participant, line_total_minor], properties: { id: { type: string }, menu_item_id: { type: string }, name: { type: string }, unit_price_minor: { type: integer, format: int64 }, quantity: { type: integer }, options: { type: array, items: { $ref: '#/components/schemas/SelectedOption' } }, participant: { $ref: '#/components/schemas/Participant' }, line_total_minor: { type: integer, format: int64 } } }
     GroupCart: { type: object, required: [token, restaurant_id, host, status, items, subtotal_minor, delivery_fee_minor, delivery_discount_minor, total_minor, participants], properties: { token: { type: string }, restaurant_id: { type: string, format: uuid }, host: { $ref: '#/components/schemas/Participant' }, status: { type: string, enum: [open, locked] }, items: { type: array, items: { $ref: '#/components/schemas/GroupCartItem' } }, subtotal_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 }, delivery_discount_minor: { type: integer, format: int64 }, total_minor: { type: integer, format: int64 }, participants: { type: array, items: { $ref: '#/components/schemas/ParticipantSummary' } } } }
     GroupCartResponse: { type: object, required: [cart, share_url], properties: { cart: { $ref: '#/components/schemas/GroupCart' }, share_url: { type: string, format: uri } } }
-    CreateOrderRequest: { type: object, required: [restaurant_id, address_id, items], properties: { restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, group_cart_id: { type: string, format: uuid }, items: { type: array, items: { $ref: '#/components/schemas/OrderItemInput' } } } }
-    OrderItemInput: { type: object, required: [menu_item_id, quantity], properties: { menu_item_id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1 }, options: { type: array, items: { type: object, additionalProperties: true } } } }
+    CreateOrderRequest: { type: object, required: [address_id, payment_method], properties: { address_id: { type: string, format: uuid }, payment_method: { type: string, enum: [TELEBIRR, CHAPA, COD] }, group_cart_token: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/OrderItemInput' } } } }
+    OrderItemInput: { type: object, required: [menu_item_id, quantity], properties: { menu_item_id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1 }, options: { type: array, items: { $ref: '#/components/schemas/SelectedOption' } } } }
     OrderItem: { type: object, required: [item_name, unit_price_minor, quantity], properties: { item_name: { type: string }, unit_price_minor: { type: integer, format: int64 }, quantity: { type: integer }, line_total_minor: { type: integer, format: int64 } } }
     Order: { type: object, required: [id, status, total_minor, items], properties: { id: { type: string, format: uuid }, status: { type: string }, total_minor: { type: integer, format: int64 }, currency: { type: string, example: ETB }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } } } }
     OrderPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Order' } }, page: { type: integer }, total: { type: integer } } }
