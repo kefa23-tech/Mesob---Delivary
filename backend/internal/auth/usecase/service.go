@@ -43,6 +43,10 @@ func NewService(deps Dependencies) *Service {
 }
 
 func (s *Service) RequestOTP(ctx context.Context, phone string) error {
+	return s.RequestOTPWithChannel(ctx, phone, "sms")
+}
+
+func (s *Service) RequestOTPWithChannel(ctx context.Context, phone, preferredChannel string) error {
 	phone = domain.NormalizePhone(phone)
 	if phone == "" {
 		return errors.New("phone is required")
@@ -61,10 +65,14 @@ func (s *Service) RequestOTP(ctx context.Context, phone string) error {
 	if err := s.otps.Save(ctx, domain.OTP{Destination: phone, Code: code, ExpiresAt: s.clock().Add(OTPValidity)}); err != nil {
 		return fmt.Errorf("save OTP: %w", err)
 	}
-	if err := s.channels.SMS.Send(ctx, phone, code); err == nil {
+	preferred, fallback := s.channels.SMS, s.channels.WhatsApp
+	if strings.EqualFold(strings.TrimSpace(preferredChannel), "whatsapp") {
+		preferred, fallback = fallback, preferred
+	}
+	if err := preferred.Send(ctx, phone, code); err == nil {
 		return nil
 	}
-	if err := s.channels.WhatsApp.Send(ctx, phone, code); err != nil {
+	if err := fallback.Send(ctx, phone, code); err != nil {
 		return fmt.Errorf("SMS and WhatsApp delivery failed: %w", err)
 	}
 	return nil

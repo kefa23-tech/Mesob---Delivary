@@ -63,12 +63,18 @@ paths:
       responses:
         '200': { description: Refreshed session, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/logout:
+    post:
+      tags: [Authentication]
+      operationId: logout
+      responses:
+        '204': { description: Session revoked }
   /restaurants:
     get:
       tags: [Catalog]
       security: []
       operationId: listRestaurants
-      parameters: [{ $ref: '#/components/parameters/Lat' }, { $ref: '#/components/parameters/Lng' }, { $ref: '#/components/parameters/Page' }]
+      parameters: [{ $ref: '#/components/parameters/Lat' }, { $ref: '#/components/parameters/Lng' }, { $ref: '#/components/parameters/Cuisine' }, { $ref: '#/components/parameters/Query' }, { $ref: '#/components/parameters/EcoPackaging' }, { $ref: '#/components/parameters/Cursor' }, { $ref: '#/components/parameters/Limit' }]
       responses: { '200': { description: Restaurants, content: { application/json: { schema: { $ref: '#/components/schemas/RestaurantPage' } } } } }
   /restaurants/{id}/menu:
     get:
@@ -76,7 +82,7 @@ paths:
       security: []
       operationId: getRestaurantMenu
       parameters: [{ $ref: '#/components/parameters/RestaurantId' }]
-      responses: { '200': { description: Restaurant menu, content: { application/json: { schema: { type: object, required: [categories], properties: { categories: { type: array, items: { $ref: '#/components/schemas/MenuCategory' } } } } } } } }
+      responses: { '200': { description: Restaurant menu, content: { application/json: { schema: { $ref: '#/components/schemas/Menu' } } } } }
   /group-carts:
     post:
       tags: [Group Cart]
@@ -146,20 +152,28 @@ components:
     Lat: { name: lat, in: query, schema: { type: number, format: double } }
     Lng: { name: lng, in: query, schema: { type: number, format: double } }
     Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+    Cuisine: { name: cuisine, in: query, schema: { type: string } }
+    Query: { name: q, in: query, schema: { type: string } }
+    EcoPackaging: { name: eco_packaging, in: query, schema: { type: boolean } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 20 } }
   responses:
     BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
     Unauthorized: { description: Authentication failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
   schemas:
-    OtpRequest: { type: object, required: [phone], properties: { phone: { type: string, example: '+251911000000' } } }
+    OtpRequest: { type: object, required: [phone], properties: { phone: { type: string, example: '+251911000000' }, channel: { type: string, enum: [sms, whatsapp], default: sms } } }
     OtpVerifyRequest: { type: object, required: [phone, code], properties: { phone: { type: string }, code: { type: string, minLength: 4, maxLength: 8 } } }
-    LoginRequest: { type: object, required: [phone, password], properties: { phone: { type: string }, password: { type: string, format: password } } }
+    LoginRequest: { type: object, required: [email, password], properties: { email: { type: string, format: email }, password: { type: string, format: password } } }
     RefreshRequest: { type: object, required: [refresh_token], properties: { refresh_token: { type: string } } }
     AuthResponse: { type: object, required: [access_token, refresh_token, user], properties: { access_token: { type: string }, refresh_token: { type: string }, expires_in: { type: integer }, user: { $ref: '#/components/schemas/User' } } }
     User: { type: object, required: [id, name, phone, role], properties: { id: { type: string, format: uuid }, name: { type: string }, phone: { type: string }, email: { type: string, format: email }, role: { type: string }, status: { type: string } } }
     Restaurant: { type: object, required: [id, name, is_open], properties: { id: { type: string, format: uuid }, name: { type: string }, lat: { type: number }, lng: { type: number }, is_open: { type: boolean }, delivery_radius_km: { type: number }, eco_packaging_certified: { type: boolean } } }
     RestaurantPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Restaurant' } }, page: { type: integer }, total: { type: integer } } }
+    Menu: { type: object, required: [restaurant_id, restaurant_name, categories], properties: { restaurant_id: { type: string, format: uuid }, restaurant_name: { type: string }, categories: { type: array, items: { $ref: '#/components/schemas/MenuCategory' } } } }
     MenuCategory: { type: object, required: [id, name, items], properties: { id: { type: string, format: uuid }, name: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/MenuItem' } } } }
-    MenuItem: { type: object, required: [id, name, price_minor, is_available], properties: { id: { type: string, format: uuid }, name: { type: string }, description: { type: string }, price_minor: { type: integer, format: int64 }, stock_limit: { type: integer }, is_available: { type: boolean }, options: { type: array, items: { type: object, additionalProperties: true } } } }
+    MenuItem: { type: object, required: [id, name, price_minor, is_available], properties: { id: { type: string, format: uuid }, name: { type: string }, description: { type: string }, image_url: { type: string, format: uri }, price_minor: { type: integer, format: int64 }, stock_limit: { type: integer }, is_available: { type: boolean }, option_groups: { type: array, items: { $ref: '#/components/schemas/OptionGroup' } } } }
+    OptionGroup: { type: object, required: [id, name, min_select, max_select, options], properties: { id: { type: string, format: uuid }, name: { type: string }, min_select: { type: integer, minimum: 0 }, max_select: { type: integer, minimum: 0 }, options: { type: array, items: { $ref: '#/components/schemas/Option' } } } }
+    Option: { type: object, required: [id, name, price_delta, is_available], properties: { id: { type: string, format: uuid }, name: { type: string }, price_delta: { type: integer, format: int64 }, is_available: { type: boolean } } }
     CreateGroupCartRequest: { type: object, required: [restaurant_id], properties: { restaurant_id: { type: string, format: uuid }, invitee_phone: { type: string } } }
     GroupCart: { type: object, required: [id, restaurant_id, status], properties: { id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, status: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } } } }
     CreateOrderRequest: { type: object, required: [restaurant_id, address_id, items], properties: { restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, group_cart_id: { type: string, format: uuid }, items: { type: array, items: { $ref: '#/components/schemas/OrderItemInput' } } } }

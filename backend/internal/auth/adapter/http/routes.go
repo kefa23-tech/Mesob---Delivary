@@ -23,7 +23,8 @@ func (h *Handler) Routes() chi.Router {
 }
 
 type otpRequest struct {
-	Phone string `json:"phone"`
+	Phone   string `json:"phone"`
+	Channel string `json:"channel"`
 }
 type otpVerifyRequest struct {
 	Phone string `json:"phone"`
@@ -42,7 +43,7 @@ func (h *Handler) requestOTP(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in) {
 		return
 	}
-	if err := h.service.RequestOTP(r.Context(), in.Phone); err != nil {
+	if err := h.service.RequestOTPWithChannel(r.Context(), in.Phone, in.Channel); err != nil {
 		writeAuthError(w, err)
 		return
 	}
