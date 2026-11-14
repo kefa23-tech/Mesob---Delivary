@@ -8,6 +8,9 @@ import (
 type RestaurantRepository interface {
 	Search(context.Context, domain.SearchFilter) (domain.SearchResult, error)
 }
+type MenuRepository interface {
+	GetMenu(context.Context, domain.RestaurantID) (domain.Menu, error)
+}
 type RestaurantCache interface {
 	Get(context.Context, string) (domain.SearchResult, bool, error)
 	Set(context.Context, string, domain.SearchResult) error

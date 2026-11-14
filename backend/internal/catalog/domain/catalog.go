@@ -2,7 +2,16 @@ package domain
 
 import "errors"
 
-var ErrInvalidSearch = errors.New("invalid restaurant search")
+var (
+	ErrInvalidSearch      = errors.New("invalid restaurant search")
+	ErrRestaurantNotFound = errors.New("restaurant not found")
+	ErrRestaurantClosed   = errors.New("restaurant is closed")
+	ErrTooFewOptions      = errors.New("too few options selected")
+	ErrTooManyOptions     = errors.New("too many options selected")
+	ErrDuplicateOption    = errors.New("duplicate option selected")
+	ErrUnavailableOption  = errors.New("unavailable option selected")
+	ErrUnknownOption      = errors.New("unknown option selected")
+)
 
 type RestaurantID string
 type MenuItemID string
@@ -24,14 +33,6 @@ type Category struct {
 	ID   CategoryID
 	Name string
 }
-type MenuItem struct {
-	ID         MenuItemID
-	Restaurant RestaurantID
-	Name       string
-	PriceCents int64
-	Available  bool
-}
-
 type SearchFilter struct {
 	Lat          float64
 	Lng          float64

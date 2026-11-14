@@ -17,6 +17,7 @@ func NewHandler(service *usecase.Service) *Handler { return &Handler{service: se
 func (h *Handler) Routes() chi.Router {
 	router := chi.NewRouter()
 	router.Get("/", h.listRestaurants)
+	router.Get("/{id}/menu", h.getMenu)
 	return router
 }
 
@@ -64,6 +65,21 @@ func (h *Handler) listRestaurants(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+func (h *Handler) getMenu(w http.ResponseWriter, r *http.Request) {
+	menu, err := h.service.GetMenu(r.Context(), domain.RestaurantID(chi.URLParam(r, "id")))
+	if err != nil {
+		switch {
+		case errors.Is(err, domain.ErrRestaurantNotFound):
+			writeError(w, r, http.StatusNotFound, "restaurant_not_found", "restaurant was not found")
+		case errors.Is(err, domain.ErrRestaurantClosed):
+			writeError(w, r, http.StatusConflict, "restaurant_closed", "restaurant is currently closed")
+		default:
+			writeError(w, r, http.StatusInternalServerError, "menu_unavailable", "restaurant menu is temporarily unavailable")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, menu)
 }
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")

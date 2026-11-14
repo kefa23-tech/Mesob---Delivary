@@ -14,12 +14,23 @@ import (
 const defaultPageSize = 20
 
 type Service struct {
-	repository RestaurantRepository
-	cache      RestaurantCache
+	repository     RestaurantRepository
+	menuRepository MenuRepository
+	cache          RestaurantCache
 }
 
 func NewService(repository RestaurantRepository, cache RestaurantCache) *Service {
 	return &Service{repository: repository, cache: cache}
+}
+func NewServiceWithMenu(repository RestaurantRepository, menuRepository MenuRepository, cache RestaurantCache) *Service {
+	return &Service{repository: repository, menuRepository: menuRepository, cache: cache}
+}
+
+func (s *Service) GetMenu(ctx context.Context, restaurantID domain.RestaurantID) (domain.Menu, error) {
+	if restaurantID == "" || s.menuRepository == nil {
+		return domain.Menu{}, domain.ErrRestaurantNotFound
+	}
+	return s.menuRepository.GetMenu(ctx, restaurantID)
 }
 
 func (s *Service) Search(ctx context.Context, filter domain.SearchFilter) (domain.SearchResult, error) {

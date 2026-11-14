@@ -74,7 +74,8 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 		return err
 	}
 	defer catalogCache.Close()
-	catalogService := catalogusecase.NewService(catalogpostgres.NewRepository(database), catalogCache)
+	catalogRepository := catalogpostgres.NewRepository(database)
+	catalogService := catalogusecase.NewServiceWithMenu(catalogRepository, catalogRepository, catalogCache)
 	catalogHandler := cataloghttp.NewHandler(catalogService)
 	users := authpostgres.NewUserRepository(database)
 	authService := authusecase.NewService(authusecase.Dependencies{
