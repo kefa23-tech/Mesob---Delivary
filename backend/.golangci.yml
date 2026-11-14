@@ -1,0 +1,34 @@
+version: "2"
+
+run:
+  timeout: 2m
+
+linters:
+  default: none
+  enable:
+    - depguard
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+  settings:
+    depguard:
+      rules:
+        clean-architecture:
+          files:
+            - "**/internal/**/domain/**/*.go"
+            - "**/internal/**/usecase/**/*.go"
+          deny:
+            - pkg: "net/http"
+              desc: "business layers must not depend on HTTP"
+            - pkg: "github.com/go-chi/chi"
+              desc: "business layers must not depend on HTTP routers"
+            - pkg: "github.com/jackc/pgx"
+              desc: "business layers must not depend on PostgreSQL drivers"
+            - pkg: "github.com/jackc/pgx/v5"
+              desc: "business layers must not depend on PostgreSQL drivers"
+            - pkg: "github.com/redis/go-redis"
+              desc: "business layers must not depend on Redis clients"
+            - pkg: "github.com/redis/go-redis/v9"
+              desc: "business layers must not depend on Redis clients"

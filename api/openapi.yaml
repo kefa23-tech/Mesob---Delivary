@@ -1,0 +1,177 @@
+openapi: 3.1.0
+info:
+  title: Mesob Platform API
+  version: 1.0.0
+  description: Master contract for customer, partner, courier, and platform operations.
+servers:
+  - url: https://api.mesob.example.com/api/v1
+    description: Production
+  - url: http://localhost:8080/api/v1
+    description: Local development
+security:
+  - bearerAuth: []
+tags:
+  - name: Authentication
+  - name: Catalog
+  - name: Group Cart
+  - name: Orders
+  - name: Partner
+  - name: Admin
+  - name: Courier
+paths:
+  /auth/otp/request:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: requestOtp
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OtpRequest' } } }
+      responses:
+        '202': { description: OTP delivery accepted, content: { application/json: { schema: { $ref: '#/components/schemas/MessageResponse' } } } }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /auth/otp/verify:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: verifyOtp
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/OtpVerifyRequest' } } }
+      responses:
+        '200': { description: Authenticated session, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/login:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: login
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } }
+      responses:
+        '200': { description: Authenticated session, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /auth/refresh:
+    post:
+      tags: [Authentication]
+      security: []
+      operationId: refreshToken
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RefreshRequest' } } }
+      responses:
+        '200': { description: Refreshed session, content: { application/json: { schema: { $ref: '#/components/schemas/AuthResponse' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /restaurants:
+    get:
+      tags: [Catalog]
+      security: []
+      operationId: listRestaurants
+      parameters: [{ $ref: '#/components/parameters/Lat' }, { $ref: '#/components/parameters/Lng' }, { $ref: '#/components/parameters/Page' }]
+      responses: { '200': { description: Restaurants, content: { application/json: { schema: { $ref: '#/components/schemas/RestaurantPage' } } } } }
+  /restaurants/{id}/menu:
+    get:
+      tags: [Catalog]
+      security: []
+      operationId: getRestaurantMenu
+      parameters: [{ $ref: '#/components/parameters/RestaurantId' }]
+      responses: { '200': { description: Restaurant menu, content: { application/json: { schema: { type: object, required: [categories], properties: { categories: { type: array, items: { $ref: '#/components/schemas/MenuCategory' } } } } } } } }
+  /group-carts:
+    post:
+      tags: [Group Cart]
+      operationId: createGroupCart
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateGroupCartRequest' } } } }
+      responses: { '201': { description: Created group cart, content: { application/json: { schema: { $ref: '#/components/schemas/GroupCart' } } } } }
+    get:
+      tags: [Group Cart]
+      operationId: listGroupCarts
+      responses: { '200': { description: Group carts, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/GroupCart' } } } } } } } }
+  /orders:
+    post:
+      tags: [Orders]
+      operationId: createOrder
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CreateOrderRequest' } } } }
+      responses: { '201': { description: Created order, content: { application/json: { schema: { $ref: '#/components/schemas/Order' } } } } }
+    get:
+      tags: [Orders]
+      operationId: listOrders
+      parameters: [{ $ref: '#/components/parameters/Page' }]
+      responses: { '200': { description: Orders, content: { application/json: { schema: { $ref: '#/components/schemas/OrderPage' } } } } }
+  /dashboard/restaurant:
+    get:
+      tags: [Partner]
+      operationId: getRestaurantDashboard
+      responses: { '200': { description: Restaurant dashboard, content: { application/json: { schema: { $ref: '#/components/schemas/RestaurantDashboard' } } } } }
+  /courier:
+    get:
+      tags: [Courier]
+      operationId: getCourierDashboard
+      responses: { '200': { description: Courier dashboard, content: { application/json: { schema: { $ref: '#/components/schemas/CourierDashboard' } } } } }
+  /admin/users:
+    get:
+      tags: [Admin]
+      operationId: adminListUsers
+      responses: { '200': { description: User list, content: { application/json: { schema: { $ref: '#/components/schemas/UserPage' } } } } }
+  /admin/disputes:
+    get:
+      tags: [Admin]
+      operationId: adminListDisputes
+      responses: { '200': { description: Dispute queue, content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Dispute' } } } } } } } }
+  /admin/disputes/{id}/resolve:
+    post:
+      tags: [Admin]
+      operationId: adminResolveDispute
+      parameters: [{ $ref: '#/components/parameters/DisputeId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/ResolveDisputeRequest' } } } }
+      responses: { '200': { description: Resolved dispute, content: { application/json: { schema: { $ref: '#/components/schemas/Dispute' } } } } }
+  /admin/dlq:
+    get:
+      tags: [Admin]
+      operationId: adminListDeadLetterJobs
+      responses: { '200': { description: Dead-letter jobs, content: { application/json: { schema: { type: object, properties: { depth: { type: integer }, jobs: { type: array, items: { $ref: '#/components/schemas/DeadLetterJob' } } } } } } } }
+  /admin/dlq/{id}/replay:
+    post:
+      tags: [Admin]
+      operationId: adminReplayDeadLetterJob
+      parameters: [{ $ref: '#/components/parameters/JobId' }]
+      responses: { '202': { description: Replay accepted } }
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    RestaurantId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    DisputeId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    JobId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    Lat: { name: lat, in: query, schema: { type: number, format: double } }
+    Lng: { name: lng, in: query, schema: { type: number, format: double } }
+    Page: { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+  responses:
+    BadRequest: { description: Invalid request, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+    Unauthorized: { description: Authentication failed, content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } } }
+  schemas:
+    OtpRequest: { type: object, required: [phone], properties: { phone: { type: string, example: '+251911000000' } } }
+    OtpVerifyRequest: { type: object, required: [phone, code], properties: { phone: { type: string }, code: { type: string, minLength: 4, maxLength: 8 } } }
+    LoginRequest: { type: object, required: [phone, password], properties: { phone: { type: string }, password: { type: string, format: password } } }
+    RefreshRequest: { type: object, required: [refresh_token], properties: { refresh_token: { type: string } } }
+    AuthResponse: { type: object, required: [access_token, refresh_token, user], properties: { access_token: { type: string }, refresh_token: { type: string }, expires_in: { type: integer }, user: { $ref: '#/components/schemas/User' } } }
+    User: { type: object, required: [id, name, phone, role], properties: { id: { type: string, format: uuid }, name: { type: string }, phone: { type: string }, email: { type: string, format: email }, role: { type: string }, status: { type: string } } }
+    Restaurant: { type: object, required: [id, name, is_open], properties: { id: { type: string, format: uuid }, name: { type: string }, lat: { type: number }, lng: { type: number }, is_open: { type: boolean }, delivery_radius_km: { type: number }, eco_packaging_certified: { type: boolean } } }
+    RestaurantPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Restaurant' } }, page: { type: integer }, total: { type: integer } } }
+    MenuCategory: { type: object, required: [id, name, items], properties: { id: { type: string, format: uuid }, name: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/MenuItem' } } } }
+    MenuItem: { type: object, required: [id, name, price_minor, is_available], properties: { id: { type: string, format: uuid }, name: { type: string }, description: { type: string }, price_minor: { type: integer, format: int64 }, stock_limit: { type: integer }, is_available: { type: boolean }, options: { type: array, items: { type: object, additionalProperties: true } } } }
+    CreateGroupCartRequest: { type: object, required: [restaurant_id], properties: { restaurant_id: { type: string, format: uuid }, invitee_phone: { type: string } } }
+    GroupCart: { type: object, required: [id, restaurant_id, status], properties: { id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, status: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } } } }
+    CreateOrderRequest: { type: object, required: [restaurant_id, address_id, items], properties: { restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, group_cart_id: { type: string, format: uuid }, items: { type: array, items: { $ref: '#/components/schemas/OrderItemInput' } } } }
+    OrderItemInput: { type: object, required: [menu_item_id, quantity], properties: { menu_item_id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1 }, options: { type: array, items: { type: object, additionalProperties: true } } } }
+    OrderItem: { type: object, required: [item_name, unit_price_minor, quantity], properties: { item_name: { type: string }, unit_price_minor: { type: integer, format: int64 }, quantity: { type: integer }, line_total_minor: { type: integer, format: int64 } } }
+    Order: { type: object, required: [id, status, total_minor, items], properties: { id: { type: string, format: uuid }, status: { type: string }, total_minor: { type: integer, format: int64 }, currency: { type: string, example: ETB }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } } } }
+    OrderPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Order' } }, page: { type: integer }, total: { type: integer } } }
+    RestaurantDashboard: { type: object, properties: { restaurant: { $ref: '#/components/schemas/Restaurant' }, pending_orders: { type: integer }, revenue_minor: { type: integer, format: int64 } } }
+    CourierDashboard: { type: object, properties: { active_deliveries: { type: integer }, cash_balance_minor: { type: integer, format: int64 }, available: { type: boolean } } }
+    UserPage: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/User' } }, total: { type: integer } } }
+    Dispute: { type: object, required: [id, status], properties: { id: { type: string, format: uuid }, order_id: { type: string, format: uuid }, status: { type: string }, resolution: { type: string } } }
+    ResolveDisputeRequest: { type: object, required: [resolution], properties: { resolution: { type: string }, refund_minor: { type: integer, format: int64, minimum: 0 } } }
+    DeadLetterJob: { type: object, required: [id, job_type, status], properties: { id: { type: string, format: uuid }, job_type: { type: string }, status: { type: string }, error_message: { type: string }, attempts: { type: integer }, created_at: { type: string, format: date-time } } }
+    MessageResponse: { type: object, properties: { message: { type: string } } }
+    Error: { type: object, required: [code, message], properties: { code: { type: string }, message: { type: string }, request_id: { type: string } } }

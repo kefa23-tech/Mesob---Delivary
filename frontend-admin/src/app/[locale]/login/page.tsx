@@ -1,0 +1,1 @@
+export default function LoginPage() { return <main className="flex min-h-screen items-center justify-center bg-slate-100"><div className="rounded-xl bg-white p-8 shadow"><h1 className="text-xl font-semibold">Operations sign in</h1><p className="mt-2 text-sm text-slate-600">Authorized platform roles only.</p></div></main>; }

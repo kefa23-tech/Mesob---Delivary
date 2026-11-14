@@ -1,0 +1,10 @@
+DROP TABLE IF EXISTS dead_letter_jobs;
+DROP TABLE IF EXISTS courier_cash_balances;
+DROP TABLE IF EXISTS ledger_entries;
+DROP TABLE IF EXISTS order_items;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS menu_items;
+DROP TABLE IF EXISTS menu_categories;
+DROP TABLE IF EXISTS restaurants;
+DROP TABLE IF EXISTS addresses;
+DROP TABLE IF EXISTS users;
