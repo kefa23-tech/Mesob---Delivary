@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	paymentclients "github.com/mesob-delivery/backend/internal/adapter/payment"
 	"github.com/mesob-delivery/backend/internal/adapter/postgres"
 	authhttp "github.com/mesob-delivery/backend/internal/auth/adapter/http"
 	"github.com/mesob-delivery/backend/internal/auth/adapter/otp"
@@ -30,31 +31,50 @@ import (
 	orderspostgres "github.com/mesob-delivery/backend/internal/orders/adapter/postgres"
 	ordersredis "github.com/mesob-delivery/backend/internal/orders/adapter/redis"
 	ordersusecase "github.com/mesob-delivery/backend/internal/orders/usecase"
+	paymentasynq "github.com/mesob-delivery/backend/internal/payment/adapter/asynq"
+	paymenthttp "github.com/mesob-delivery/backend/internal/payment/adapter/http"
+	paymentpostgres "github.com/mesob-delivery/backend/internal/payment/adapter/postgres"
+	paymentdomain "github.com/mesob-delivery/backend/internal/payment/domain"
+	paymentusecase "github.com/mesob-delivery/backend/internal/payment/usecase"
 	"github.com/mesob-delivery/backend/internal/platform/httpmiddleware"
 )
 
 type config struct {
-	Address            string
-	DatabaseURL        string
-	MigrationsPath     string
-	RedisURL           string
-	JWTSecret          string
-	SMSGatewayURL      string
-	WhatsAppGatewayURL string
-	WebAppURL          string
+	Address               string
+	DatabaseURL           string
+	MigrationsPath        string
+	RedisURL              string
+	JWTSecret             string
+	SMSGatewayURL         string
+	WhatsAppGatewayURL    string
+	WebAppURL             string
+	PublicAPIURL          string
+	ChapaAPIURL           string
+	ChapaSecretKey        string
+	ChapaWebhookSecret    string
+	TelebirrAPIURL        string
+	TelebirrAPIKey        string
+	TelebirrWebhookSecret string
 }
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(context.Background(), config{
-		Address:            envOr("API_ADDRESS", ":8080"),
-		DatabaseURL:        envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/mesob?sslmode=disable"),
-		MigrationsPath:     envOr("MIGRATIONS_PATH", "migrations"),
-		RedisURL:           envOr("REDIS_URL", "redis://localhost:6379/0"),
-		JWTSecret:          envOr("JWT_SECRET", "development-only-change-me"),
-		SMSGatewayURL:      os.Getenv("SMS_GATEWAY_URL"),
-		WhatsAppGatewayURL: os.Getenv("WHATSAPP_GATEWAY_URL"),
-		WebAppURL:          envOr("WEB_APP_URL", "http://localhost:3000/en"),
+		Address:               envOr("API_ADDRESS", ":8080"),
+		DatabaseURL:           envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/mesob?sslmode=disable"),
+		MigrationsPath:        envOr("MIGRATIONS_PATH", "migrations"),
+		RedisURL:              envOr("REDIS_URL", "redis://localhost:6379/0"),
+		JWTSecret:             envOr("JWT_SECRET", "development-only-change-me"),
+		SMSGatewayURL:         os.Getenv("SMS_GATEWAY_URL"),
+		WhatsAppGatewayURL:    os.Getenv("WHATSAPP_GATEWAY_URL"),
+		WebAppURL:             envOr("WEB_APP_URL", "http://localhost:3000/en"),
+		PublicAPIURL:          envOr("PUBLIC_API_URL", "http://localhost:8080"),
+		ChapaAPIURL:           envOr("CHAPA_API_URL", "https://api.chapa.co/v1"),
+		ChapaSecretKey:        os.Getenv("CHAPA_SECRET_KEY"),
+		ChapaWebhookSecret:    os.Getenv("CHAPA_WEBHOOK_SECRET"),
+		TelebirrAPIURL:        os.Getenv("TELEBIRR_API_URL"),
+		TelebirrAPIKey:        os.Getenv("TELEBIRR_API_KEY"),
+		TelebirrWebhookSecret: os.Getenv("TELEBIRR_WEBHOOK_SECRET"),
 	}, logger); err != nil {
 		logger.Error("api stopped", "error", err)
 		os.Exit(1)
@@ -93,6 +113,27 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	orderRepository := orderspostgres.NewRepository(database)
 	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore)
 	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService)
+	paymentQueue, err := paymentasynq.NewQueue(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer paymentQueue.Close()
+	paymentGateways := paymentclients.Registry{
+		paymentdomain.Chapa:    paymentclients.NewChapaClient(cfg.ChapaAPIURL, cfg.ChapaSecretKey, nil),
+		paymentdomain.Telebirr: paymentclients.NewTelebirrClient(cfg.TelebirrAPIURL, cfg.TelebirrAPIKey, nil),
+	}
+	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL)
+	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
+	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger})
+	if err != nil {
+		return err
+	}
+	defer paymentWorker.Shutdown()
+	go func() {
+		if err := paymentWorker.Run(); err != nil {
+			logger.Error("payment worker stopped", "error", err)
+		}
+	}()
 	users := authpostgres.NewUserRepository(database)
 	authService := authusecase.NewService(authusecase.Dependencies{
 		OTPs:    redisStore,
@@ -117,6 +158,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())
 	router.Mount("/api/v1/group-carts", groupCartHandler.Routes())
 	router.Mount("/api/v1/orders", checkoutHandler.Routes())
+	router.Mount("/api/v1/payments", paymentHandler.Routes())
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
@@ -146,6 +188,13 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+type restaurantPaymentNotifier struct{ logger *slog.Logger }
+
+func (n restaurantPaymentNotifier) RestaurantOrderPaid(ctx context.Context, orderID string) error {
+	n.logger.InfoContext(ctx, "restaurant payment notification event", "event", "restaurant.order_paid", "order_id", orderID)
+	return nil
 }
 
 func deliveryProvider(endpoint, channel string, logger *slog.Logger) authusecase.OTPChannel {

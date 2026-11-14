@@ -163,7 +163,11 @@ WHERE og.menu_item_id=$1 ORDER BY og.sort_order, og.id, o.sort_order, o.id`, id)
 		optionRows.Close()
 	}
 
-	order := domain.Order{UserID: userID, RestaurantID: restaurantID, AddressID: request.AddressID, Status: domain.OrderPending, PaymentMethod: request.PaymentMethod, PaymentStatus: "pending", DeliveryFeeMinor: DeliveryFeeMinor, Currency: "ETB", Items: make([]domain.OrderItem, 0, len(lines))}
+	paymentStatus := "pending"
+	if request.PaymentMethod != domain.PaymentCOD {
+		paymentStatus = "pending_payment"
+	}
+	order := domain.Order{UserID: userID, RestaurantID: restaurantID, AddressID: request.AddressID, Status: domain.OrderPending, PaymentMethod: request.PaymentMethod, PaymentStatus: paymentStatus, DeliveryFeeMinor: DeliveryFeeMinor, Currency: "ETB", Items: make([]domain.OrderItem, 0, len(lines))}
 	for _, line := range lines {
 		item := items[line.MenuItemID]
 		if !domain.ValidateSelections(item.menu, line.Options) {
@@ -198,7 +202,7 @@ WHERE id=$1 AND stock_limit IS NOT NULL AND COALESCE(stock_remaining, stock_limi
 	var placed time.Time
 	err = tx.QueryRow(ctx, `INSERT INTO orders(user_id, restaurant_id, delivery_address_id, status, payment_status, payment_method,
 subtotal_minor, delivery_fee_minor, commission_minor, total_minor, currency, placed_at, idempotency_key)
-VALUES($1,$2,$3,'pending','pending',$4,$5,$6,$7,$8,'ETB',now(),$9) RETURNING id::text, placed_at`, userID, restaurantID, request.AddressID, string(request.PaymentMethod), order.SubtotalMinor, order.DeliveryFeeMinor, order.CommissionMinor, order.TotalMinor, key).Scan(&order.ID, &placed)
+VALUES($1,$2,$3,'pending',CASE WHEN $4='COD' THEN 'pending' ELSE 'pending_payment' END,$4,$5,$6,$7,$8,'ETB',now(),$9) RETURNING id::text, placed_at`, userID, restaurantID, request.AddressID, string(request.PaymentMethod), order.SubtotalMinor, order.DeliveryFeeMinor, order.CommissionMinor, order.TotalMinor, key).Scan(&order.ID, &placed)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: %w", err)
 	}
