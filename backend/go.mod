@@ -2,16 +2,16 @@ module github.com/mesob-delivery/backend
 
 go 1.26.0
 
-require github.com/go-chi/chi/v5 v5.2.1
+require github.com/go-chi/chi/v5 v5.3.0
 
 require (
-	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/golang-jwt/jwt/v5 v5.2.2
 	github.com/golang-migrate/migrate/v4 v4.18.3
 	github.com/hibiken/asynq v0.26.0
-	github.com/jackc/pgx/v5 v5.7.2
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/redis/go-redis/v9 v9.14.1
 	github.com/testcontainers/testcontainers-go v0.37.0
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.58.1-0.20261009181718-2f1f834330b2
 )
 
 require (
