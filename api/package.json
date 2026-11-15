@@ -6,7 +6,7 @@
     "generate": "npm run generate:frontend && npm run generate:admin",
     "generate:frontend": "openapi-typescript openapi.yaml -o ../frontend-app/src/infrastructure/api/generated.ts",
     "generate:admin": "openapi-typescript openapi.yaml -o ../frontend-admin/src/infrastructure/api/generated.ts",
-    "check": "openapi-typescript openapi.yaml --check"
+    "check": "openapi-typescript openapi.yaml -o ../frontend-app/src/infrastructure/api/generated.ts --check && openapi-typescript openapi.yaml -o ../frontend-admin/src/infrastructure/api/generated.ts --check"
   },
   "devDependencies": { "openapi-typescript": "^7.9.1" }
 }

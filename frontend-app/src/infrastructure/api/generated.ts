@@ -212,6 +212,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/payments/{order_id}/initialize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["initializeOrderPayment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/webhook/chapa": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["chapaPaymentWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/payments/webhook/telebirr": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["telebirrPaymentWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboard/restaurant": {
         parameters: {
             query?: never;
@@ -494,38 +542,68 @@ export interface components {
         };
         CreateOrderRequest: {
             /** Format: uuid */
-            restaurant_id: string;
-            /** Format: uuid */
             address_id: string;
-            /** Format: uuid */
-            group_cart_id?: string;
-            items: components["schemas"]["OrderItemInput"][];
+            /** @enum {string} */
+            payment_method: "TELEBIRR" | "CHAPA" | "COD";
+            group_cart_token?: string;
+            items?: components["schemas"]["OrderItemInput"][];
         };
         OrderItemInput: {
             /** Format: uuid */
             menu_item_id: string;
             quantity: number;
-            options?: {
-                [key: string]: unknown;
-            }[];
+            options?: components["schemas"]["SelectedOption"][];
         };
         OrderItem: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            menu_item_id: string;
             item_name: string;
             /** Format: int64 */
             unit_price_minor: number;
             quantity: number;
+            options: components["schemas"]["SelectedOption"][];
             /** Format: int64 */
-            line_total_minor?: number;
+            line_total_minor: number;
         };
         Order: {
             /** Format: uuid */
             id: string;
-            status: string;
+            /** Format: uuid */
+            user_id: string;
+            /** Format: uuid */
+            restaurant_id: string;
+            /** Format: uuid */
+            address_id: string;
+            /** @enum {string} */
+            status: "pending" | "confirmed" | "preparing" | "ready" | "dispatched" | "delivered" | "cancelled";
+            /** @enum {string} */
+            payment_method: "TELEBIRR" | "CHAPA" | "COD";
+            /** @enum {string} */
+            payment_status: "pending" | "pending_payment" | "paid" | "payment_failed";
+            /** Format: int64 */
+            subtotal_minor: number;
+            /** Format: int64 */
+            delivery_fee_minor: number;
+            /** Format: int64 */
+            commission_minor: number;
             /** Format: int64 */
             total_minor: number;
             /** @example ETB */
-            currency?: string;
+            currency: string;
             items: components["schemas"]["OrderItem"][];
+            /** Format: date-time */
+            placed_at: string;
+        };
+        PaymentInitialization: {
+            /** Format: uuid */
+            order_id: string;
+            /** @enum {string} */
+            provider: "CHAPA" | "TELEBIRR";
+            reference: string;
+            /** Format: uri */
+            checkout_url: string;
         };
         OrderPage: {
             data: components["schemas"]["Order"][];
@@ -963,7 +1041,9 @@ export interface operations {
     createOrder: {
         parameters: {
             query?: never;
-            header?: never;
+            header: {
+                "Idempotency-Key": string;
+            };
             path?: never;
             cookie?: never;
         };
@@ -973,13 +1053,159 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Created order */
+            /** @description Created order or cached replay */
             201: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Order"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Idempotency key is in flight */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Restaurant */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    initializeOrderPayment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** Format: uri */
+                    return_url?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Hosted payment checkout */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentInitialization"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Order cannot be paid or gateway initialization failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    chapaPaymentWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-chapa-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Event accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Invalid webhook signature */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payment event rejected */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    telebirrPaymentWebhook: {
+        parameters: {
+            query?: never;
+            header: {
+                "x-telebirr-signature": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Event accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Invalid webhook signature */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Payment event rejected */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
                 };
             };
         };
