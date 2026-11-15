@@ -1,0 +1,139 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mesob}
+      POSTGRES_USER: ${POSTGRES_USER:-mesob}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [backend]
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    networks: [backend]
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment: &backend_environment
+      PROCESS_ROLE: api
+      API_ADDRESS: :8080
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      WEB_APP_URL: https://${MESOB_DOMAIN:?set MESOB_DOMAIN}
+      PUBLIC_API_URL: https://${MESOB_DOMAIN:?set MESOB_DOMAIN}
+      CORS_ALLOWED_ORIGINS: https://${MESOB_DOMAIN},https://${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
+      CHAPA_API_URL: ${CHAPA_API_URL:-https://api.chapa.co/v1}
+      CHAPA_SECRET_KEY: ${CHAPA_SECRET_KEY:-}
+      CHAPA_WEBHOOK_SECRET: ${CHAPA_WEBHOOK_SECRET:-}
+      TELEBIRR_API_URL: ${TELEBIRR_API_URL:-}
+      TELEBIRR_API_KEY: ${TELEBIRR_API_KEY:-}
+      TELEBIRR_WEBHOOK_SECRET: ${TELEBIRR_WEBHOOK_SECRET:-}
+      SMS_GATEWAY_URL: ${SMS_GATEWAY_URL:-}
+      WHATSAPP_GATEWAY_URL: ${WHATSAPP_GATEWAY_URL:-}
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/api/v1/health"]
+      interval: 20s
+      timeout: 4s
+      retries: 5
+      start_period: 30s
+    networks: [backend]
+    stop_grace_period: 40s
+
+  worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      <<: *backend_environment
+      PROCESS_ROLE: worker
+    entrypoint: ["/app/mesob-worker"]
+    depends_on:
+      api: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    networks: [backend]
+    stop_grace_period: 2m
+
+  frontend-app:
+    build:
+      context: .
+      dockerfile: frontend-app/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${MESOB_DOMAIN:?set MESOB_DOMAIN}/api/v1
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on: [api]
+    networks: [backend]
+
+  frontend-admin:
+    build:
+      context: .
+      dockerfile: frontend-admin/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: https://${ADMIN_DOMAIN:?set ADMIN_DOMAIN}/api/v1
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on: [api]
+    networks: [backend]
+
+  proxy:
+    build:
+      context: .
+      dockerfile: deploy/Caddy.Dockerfile
+    restart: unless-stopped
+    environment:
+      MESOB_DOMAIN: ${MESOB_DOMAIN:?set MESOB_DOMAIN}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:?set ADMIN_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api, frontend-app, frontend-admin]
+    networks: [backend]
+
+volumes:
+  postgres_data:
+  redis_data:
+  caddy_data:
+  caddy_config:
+
+networks:
+  backend:
+    driver: bridge

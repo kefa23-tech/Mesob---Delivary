@@ -1,0 +1,29 @@
+{$MESOB_DOMAIN} {
+	encode zstd gzip br
+	@api path /api/* /metrics
+	handle @api {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+			header_down X-Accel-Buffering no
+		}
+	}
+	handle {
+		reverse_proxy frontend-app:3000
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	encode zstd gzip br
+	@api path /api/* /metrics
+	handle @api {
+		reverse_proxy api:8080 {
+			header_up X-Real-IP {remote_host}
+			flush_interval -1
+			header_down X-Accel-Buffering no
+		}
+	}
+	handle {
+		reverse_proxy frontend-admin:3000
+	}
+}

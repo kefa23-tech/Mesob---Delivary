@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -68,7 +71,11 @@ type config struct {
 	TelebirrAPIURL        string
 	TelebirrAPIKey        string
 	TelebirrWebhookSecret string
+	ProcessRole           string
+	CORSOrigins           []string
 }
+
+var defaultProcessRole = "api"
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
@@ -88,6 +95,8 @@ func main() {
 		TelebirrAPIURL:        os.Getenv("TELEBIRR_API_URL"),
 		TelebirrAPIKey:        os.Getenv("TELEBIRR_API_KEY"),
 		TelebirrWebhookSecret: os.Getenv("TELEBIRR_WEBHOOK_SECRET"),
+		ProcessRole:           envOr("PROCESS_ROLE", defaultProcessRole),
+		CORSOrigins:           strings.Split(envOr("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"), ","),
 	}, logger); err != nil {
 		logger.Error("api stopped", "error", err)
 		os.Exit(1)
@@ -95,8 +104,13 @@ func main() {
 }
 
 func run(parent context.Context, cfg config, logger *slog.Logger) error {
-	if err := postgres.RunMigrations(parent, cfg.DatabaseURL, cfg.MigrationsPath); err != nil {
-		return err
+	if cfg.ProcessRole != "api" && cfg.ProcessRole != "worker" {
+		return errors.New("PROCESS_ROLE must be api or worker")
+	}
+	if cfg.ProcessRole == "api" {
+		if err := postgres.RunMigrations(parent, cfg.DatabaseURL, cfg.MigrationsPath); err != nil {
+			return err
+		}
 	}
 	database, err := postgres.Open(parent, cfg.DatabaseURL)
 	if err != nil {
@@ -167,46 +181,74 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	adminHandler.WithDLQ(dlqInspector)
 	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL, realtimeHub)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
-	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService, groupCartStore)
-	if err != nil {
-		return err
-	}
-	defer paymentWorker.Shutdown()
-	go func() {
-		if err := paymentWorker.Run(); err != nil {
-			logger.Error("payment worker stopped", "error", err)
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	if cfg.ProcessRole == "worker" {
+		workerDone := make([]<-chan error, 0, 4)
+		shutdownWorkers := make([]func(), 0, 4)
+		unexpectedExit := make(chan error, 4)
+		var shutdownOnce sync.Once
+		shutdown := func() {
+			shutdownOnce.Do(func() {
+				for i := len(shutdownWorkers) - 1; i >= 0; i-- {
+					shutdownWorkers[i]()
+				}
+				for _, done := range workerDone {
+					if err := <-done; err != nil {
+						logger.Error("background component stopped", "error", err)
+					}
+				}
+			})
 		}
-	}()
-	paymentScheduler, err := paymentasynq.NewScheduler(cfg.RedisURL)
-	if err != nil {
-		return err
-	}
-	defer paymentScheduler.Shutdown()
-	go func() {
-		if err := paymentScheduler.Run(); err != nil {
-			logger.Error("payment scheduler stopped", "error", err)
+		defer shutdown()
+		start := func(name string, run func() error, stop func()) {
+			done := make(chan error, 1)
+			workerDone = append(workerDone, done)
+			shutdownWorkers = append(shutdownWorkers, stop)
+			go func() {
+				err := run()
+				done <- err
+				if err == nil {
+					err = fmt.Errorf("%s stopped unexpectedly", name)
+				} else {
+					err = fmt.Errorf("%s stopped: %w", name, err)
+				}
+				unexpectedExit <- err
+			}()
 		}
-	}()
-	dispatchWorker, err := dispatchasynq.NewWorker(cfg.RedisURL, dispatchService)
-	if err != nil {
-		return err
-	}
-	defer dispatchWorker.Shutdown()
-	go func() {
-		if err := dispatchWorker.Run(); err != nil {
-			logger.Error("dispatch worker stopped", "error", err)
+		paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService, groupCartStore)
+		if err != nil {
+			return err
 		}
-	}()
-	dispatchScheduler, err := dispatchasynq.NewScheduler(cfg.RedisURL)
-	if err != nil {
-		return err
-	}
-	defer dispatchScheduler.Shutdown()
-	go func() {
-		if err := dispatchScheduler.Run(); err != nil {
-			logger.Error("dispatch scheduler stopped", "error", err)
+		start("payment worker", paymentWorker.Run, paymentWorker.Shutdown)
+		paymentScheduler, err := paymentasynq.NewScheduler(cfg.RedisURL)
+		if err != nil {
+			return err
 		}
-	}()
+		start("payment scheduler", paymentScheduler.Run, paymentScheduler.Shutdown)
+		dispatchWorker, err := dispatchasynq.NewWorker(cfg.RedisURL, dispatchService)
+		if err != nil {
+			return err
+		}
+		start("dispatch worker", dispatchWorker.Run, dispatchWorker.Shutdown)
+		dispatchScheduler, err := dispatchasynq.NewScheduler(cfg.RedisURL)
+		if err != nil {
+			return err
+		}
+		start("dispatch scheduler", dispatchScheduler.Run, dispatchScheduler.Shutdown)
+		logger.Info("background workers started")
+		select {
+		case <-ctx.Done():
+			shutdown()
+			return nil
+		case err := <-unexpectedExit:
+			shutdown()
+			if ctx.Err() != nil {
+				return nil
+			}
+			return err
+		}
+	}
 	users := authpostgres.NewUserRepository(database)
 	authService := authusecase.NewService(authusecase.Dependencies{
 		OTPs:    redisStore,
@@ -225,7 +267,17 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	healthHandler := healthhttp.NewHandler(healthService)
 
 	router := chi.NewRouter()
+	drain := httpmiddleware.NewDrainController()
+	rateLimiter, err := httpmiddleware.NewRateLimiter(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer rateLimiter.Close()
+	router.Use(httpmiddleware.SecurityHeaders)
+	router.Use(httpmiddleware.CORS(cfg.CORSOrigins))
 	router.Use(httpmiddleware.RequestID)
+	router.Use(drain.Middleware)
+	router.Use(rateLimiter.Middleware)
 	router.Get("/metrics", workerobs.MetricsHandler)
 	router.Mount("/api/v1", healthHandler.Routes())
 	router.Mount("/api/v1/auth", authHandler.Routes())
@@ -240,9 +292,6 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1/admin", identity(adminHandler.Routes()))
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}
-	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Info("api listening", "address", cfg.Address)
@@ -256,9 +305,13 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 		}
 		return err
 	case <-ctx.Done():
+		drain.BeginDrain()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		return server.Shutdown(shutdownCtx)
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			return errors.Join(err, server.Close())
+		}
+		return nil
 	}
 }
 
