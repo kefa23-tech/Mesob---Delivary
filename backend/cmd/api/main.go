@@ -27,6 +27,8 @@ import (
 	catalogusecase "github.com/mesob-delivery/backend/internal/catalog/usecase"
 	healthhttp "github.com/mesob-delivery/backend/internal/health/adapter/http"
 	healthusecase "github.com/mesob-delivery/backend/internal/health/usecase"
+	ledgerpostgres "github.com/mesob-delivery/backend/internal/ledger/adapter/postgres"
+	ledgerusecase "github.com/mesob-delivery/backend/internal/ledger/usecase"
 	ordershttp "github.com/mesob-delivery/backend/internal/orders/adapter/http"
 	orderspostgres "github.com/mesob-delivery/backend/internal/orders/adapter/postgres"
 	ordersredis "github.com/mesob-delivery/backend/internal/orders/adapter/redis"
@@ -122,7 +124,9 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 		paymentdomain.Chapa:    paymentclients.NewChapaClient(cfg.ChapaAPIURL, cfg.ChapaSecretKey, nil),
 		paymentdomain.Telebirr: paymentclients.NewTelebirrClient(cfg.TelebirrAPIURL, cfg.TelebirrAPIKey, nil),
 	}
-	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL)
+	ledgerRepository := ledgerpostgres.NewRepository(database)
+	ledgerService := ledgerusecase.NewService(ledgerRepository)
+	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
 	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger})
 	if err != nil {

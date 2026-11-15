@@ -9,12 +9,34 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	ledgerdomain "github.com/mesob-delivery/backend/internal/ledger/domain"
+	ledgerusecase "github.com/mesob-delivery/backend/internal/ledger/usecase"
 	"github.com/mesob-delivery/backend/internal/payment/domain"
 )
 
-type Repository struct{ pool *pgxpool.Pool }
+type Repository struct {
+	pool   *pgxpool.Pool
+	ledger *ledgerusecase.Service
+}
 
-func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+func NewRepository(pool *pgxpool.Pool, ledger ...*ledgerusecase.Service) *Repository {
+	repo := &Repository{pool: pool}
+	if len(ledger) > 0 {
+		repo.ledger = ledger[0]
+	}
+	return repo
+}
+
+type ledgerTransaction struct{ pgx.Tx }
+
+func (t ledgerTransaction) Exec(ctx context.Context, sql string, args ...any) error {
+	_, err := t.Tx.Exec(ctx, sql, args...)
+	return err
+}
+
+func (t ledgerTransaction) QueryRow(ctx context.Context, sql string, args ...any) ledgerusecase.Row {
+	return t.Tx.QueryRow(ctx, sql, args...)
+}
 
 func (r *Repository) ResolveProvider(ctx context.Context, userID, orderID string) (domain.Provider, error) {
 	var method string
@@ -114,6 +136,16 @@ func (r *Repository) Confirm(ctx context.Context, provider domain.Provider, refe
 	if status != string(domain.Pending) || amount != expectedAmount || !strings.EqualFold(strings.TrimSpace(currency), strings.TrimSpace(expectedCurrency)) {
 		return "", false, domain.ErrInvalidPayment
 	}
+	var restaurantID string
+	var subtotal, commission, deliveryFee, total int64
+	err = tx.QueryRow(ctx, `SELECT restaurant_id::text,subtotal_minor,commission_minor,delivery_fee_minor,total_minor
+FROM orders WHERE id=$1 FOR UPDATE`, orderID).Scan(&restaurantID, &subtotal, &commission, &deliveryFee, &total)
+	if err != nil {
+		return "", false, fmt.Errorf("load order payment split: %w", err)
+	}
+	if total != expectedAmount {
+		return "", false, domain.ErrInvalidPayment
+	}
 	command, err := tx.Exec(ctx, `UPDATE orders SET payment_status='paid',updated_at=now() WHERE id=$1 AND payment_status='pending_payment'`, orderID)
 	if err != nil {
 		return "", false, fmt.Errorf("mark order paid: %w", err)
@@ -123,6 +155,13 @@ func (r *Repository) Confirm(ctx context.Context, provider domain.Provider, refe
 	}
 	if _, err := tx.Exec(ctx, `UPDATE payment_transactions SET status='paid',updated_at=now() WHERE provider=$1 AND reference=$2`, string(provider), reference); err != nil {
 		return "", false, fmt.Errorf("mark payment paid: %w", err)
+	}
+	entry := ledgerdomain.OnlinePaymentEntry(orderID, string(provider), reference, restaurantID, total, subtotal, commission, deliveryFee)
+	if r.ledger == nil {
+		return "", false, errors.New("ledger service is not configured")
+	}
+	if err := r.ledger.Record(ctx, ledgerTransaction{tx}, entry); err != nil {
+		return "", false, fmt.Errorf("post online payment ledger entry: %w", err)
 	}
 	payload, _ := json.Marshal(map[string]any{"provider": provider, "reference": reference})
 	if _, err := tx.Exec(ctx, `INSERT INTO order_events(order_id,event_type,payload) VALUES($1,'restaurant.order_paid',$2::jsonb) ON CONFLICT(order_id,event_type) DO NOTHING`, orderID, string(payload)); err != nil {

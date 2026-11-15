@@ -9,14 +9,38 @@ import (
 const OrderIdempotencyTTL = 24 * time.Hour
 
 var (
-	ErrInvalidOrder        = errors.New("invalid order")
-	ErrRestaurantClosed    = errors.New("restaurant is closed")
-	ErrAddressOutOfRange   = errors.New("delivery address is outside the restaurant delivery area")
-	ErrItemUnavailable     = errors.New("one or more items are unavailable")
-	ErrInsufficientStock   = errors.New("insufficient stock")
-	ErrIdempotencyConflict = errors.New("idempotency key is already in progress")
-	ErrAddressNotFound     = errors.New("delivery address not found")
+	ErrInvalidOrder          = errors.New("invalid order")
+	ErrRestaurantClosed      = errors.New("restaurant is closed")
+	ErrAddressOutOfRange     = errors.New("delivery address is outside the restaurant delivery area")
+	ErrItemUnavailable       = errors.New("one or more items are unavailable")
+	ErrInsufficientStock     = errors.New("insufficient stock")
+	ErrIdempotencyConflict   = errors.New("idempotency key is already in progress")
+	ErrAddressNotFound       = errors.New("delivery address not found")
+	ErrCODOrderLimit         = errors.New("cash-on-delivery orders cannot exceed 200000 santim")
+	ErrCODFirstOrder         = errors.New("cash on delivery requires a previously delivered order")
+	ErrCODUnpaidCancellation = errors.New("cash on delivery is unavailable after an unpaid cancellation")
+	ErrCODSuspended          = errors.New("cash-on-delivery privileges are suspended")
 )
+
+const MaxCODOrderMinor int64 = 200_000
+
+// ValidateCODEligibility applies the customer and amount policy using values
+// loaded while the checkout transaction holds the customer row lock.
+func ValidateCODEligibility(totalMinor int64, completedOrders, unpaidCancellations int64, suspended bool) error {
+	if totalMinor < 0 || totalMinor > MaxCODOrderMinor {
+		return ErrCODOrderLimit
+	}
+	if suspended {
+		return ErrCODSuspended
+	}
+	if completedOrders < 1 {
+		return ErrCODFirstOrder
+	}
+	if unpaidCancellations > 0 {
+		return ErrCODUnpaidCancellation
+	}
+	return nil
+}
 
 type PaymentMethod string
 

@@ -56,6 +56,28 @@ func (r *Repository) Place(ctx context.Context, userID, key string, request doma
 		return domain.Order{}, fmt.Errorf("begin checkout: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
+	var codSuspended bool
+	var completedOrders, unpaidCancellations int64
+	if request.PaymentMethod == domain.PaymentCOD {
+		var accountStatus string
+		err = tx.QueryRow(ctx, `SELECT status,cod_suspended FROM users WHERE id=$1 AND role='customer' FOR UPDATE`, userID).Scan(&accountStatus, &codSuspended)
+		if err == pgx.ErrNoRows || (err == nil && accountStatus != "active") {
+			return domain.Order{}, domain.ErrInvalidOrder
+		}
+		if err != nil {
+			return domain.Order{}, fmt.Errorf("lock COD customer: %w", err)
+		}
+		err = tx.QueryRow(ctx, `SELECT
+count(*) FILTER (WHERE status='delivered'),
+count(*) FILTER (WHERE status='cancelled' AND payment_method='COD' AND payment_status <> 'paid')
+FROM orders WHERE user_id=$1`, userID).Scan(&completedOrders, &unpaidCancellations)
+		if err != nil {
+			return domain.Order{}, fmt.Errorf("load COD customer history: %w", err)
+		}
+		if err := domain.ValidateCODEligibility(0, completedOrders, unpaidCancellations, codSuspended); err != nil {
+			return domain.Order{}, err
+		}
+	}
 
 	items := make(map[string]*lockedItem, len(ids))
 	rows, err := tx.Query(ctx, `SELECT mi.id::text, mc.restaurant_id::text, mi.name, mi.price_minor, mi.is_available, mi.stock_limit, mi.stock_remaining
@@ -183,6 +205,11 @@ WHERE og.menu_item_id=$1 ORDER BY og.sort_order, og.id, o.sort_order, o.id`, id)
 	}
 	order.CommissionMinor = order.SubtotalMinor/10_000*commissionBasisPoints + (order.SubtotalMinor%10_000*commissionBasisPoints+5_000)/10_000
 	order.TotalMinor = order.SubtotalMinor + order.DeliveryFeeMinor
+	if request.PaymentMethod == domain.PaymentCOD {
+		if err := domain.ValidateCODEligibility(order.TotalMinor, completedOrders, unpaidCancellations, codSuspended); err != nil {
+			return domain.Order{}, err
+		}
+	}
 
 	// Inventory is decremented only after every line has passed validation; locks
 	// make the check and update indivisible relative to competing checkouts.

@@ -49,6 +49,8 @@ func (h *CheckoutHandler) place(w http.ResponseWriter, r *http.Request) {
 			statusCode, code = http.StatusNotFound, "resource_not_found"
 		case errors.Is(err, domain.ErrAddressOutOfRange), errors.Is(err, domain.ErrRestaurantClosed), errors.Is(err, domain.ErrItemUnavailable), errors.Is(err, domain.ErrInsufficientStock):
 			statusCode, code = http.StatusUnprocessableEntity, "checkout_unavailable"
+		case errors.Is(err, domain.ErrCODOrderLimit), errors.Is(err, domain.ErrCODFirstOrder), errors.Is(err, domain.ErrCODUnpaidCancellation), errors.Is(err, domain.ErrCODSuspended):
+			statusCode, code = http.StatusUnprocessableEntity, "cod_ineligible"
 		}
 		writeJSON(w, statusCode, map[string]any{"error": map[string]string{"code": code, "message": err.Error()}})
 		return

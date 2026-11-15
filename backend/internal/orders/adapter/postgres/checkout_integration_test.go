@@ -70,7 +70,7 @@ func TestConcurrentCheckoutCannotOversellLastItem(t *testing.T) {
 		t.Fatal(err)
 	}
 	repo := orderspostgres.NewRepository(pool)
-	request := domain.CheckoutRequest{AddressID: addressID, PaymentMethod: domain.PaymentCOD, Items: []domain.CheckoutItem{{MenuItemID: itemID, Quantity: 1}}}
+	request := domain.CheckoutRequest{AddressID: addressID, PaymentMethod: domain.PaymentChapa, Items: []domain.CheckoutItem{{MenuItemID: itemID, Quantity: 1}}}
 	start := make(chan struct{})
 	type result struct {
 		order domain.Order
