@@ -17,6 +17,20 @@ type CheckoutRepository interface {
 	Place(context.Context, string, string, domain.CheckoutRequest, []domain.CartItem) (domain.Order, error)
 }
 
+type KitchenRepository interface {
+	ListRestaurantOrders(context.Context, string) ([]domain.KitchenOrder, error)
+	AcceptRestaurantOrder(context.Context, string, string, int) (domain.KitchenOrder, error)
+	StartRestaurantOrder(context.Context, string, string) (domain.KitchenOrder, error)
+	RejectRestaurantOrder(context.Context, string, string, domain.RestaurantRejectionReason) error
+	MarkRestaurantOrderReady(context.Context, string, string) (domain.KitchenOrder, error)
+	TimeoutRestaurantOrder(context.Context, string) error
+}
+
+type RestaurantSLAScheduler interface {
+	ScheduleRestaurantSLA(context.Context, string, time.Duration) error
+	CancelRestaurantSLA(context.Context, string) error
+}
+
 type IdempotencyStore interface {
 	Begin(context.Context, string, string) (cached []byte, inFlight bool, err error)
 	Complete(context.Context, string, string, []byte) error

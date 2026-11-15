@@ -276,6 +276,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/restaurant/orders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listRestaurantKitchenOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/restaurant/orders/{id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acceptRestaurantKitchenOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/restaurant/orders/{id}/preparing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["startRestaurantKitchenOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/restaurant/orders/{id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["rejectRestaurantKitchenOrder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/dashboard/restaurant/orders/{id}/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["markRestaurantKitchenOrderReady"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courier": {
         parameters: {
             query?: never;
@@ -577,11 +657,11 @@ export interface components {
             /** Format: uuid */
             address_id: string;
             /** @enum {string} */
-            status: "pending" | "confirmed" | "preparing" | "ready" | "dispatched" | "delivered" | "cancelled";
+            status: "pending" | "confirmed" | "preparing" | "ready" | "dispatched" | "delivered" | "cancelled" | "PAID" | "CONFIRMED_COD" | "ACCEPTED" | "PREPARING" | "READY_FOR_PICKUP" | "REJECTED_BY_RESTAURANT" | "CANCELLED_TIMEOUT";
             /** @enum {string} */
             payment_method: "TELEBIRR" | "CHAPA" | "COD";
             /** @enum {string} */
-            payment_status: "pending" | "pending_payment" | "paid" | "payment_failed";
+            payment_status: "pending" | "pending_payment" | "paid" | "payment_failed" | "refund_pending";
             /** Format: int64 */
             subtotal_minor: number;
             /** Format: int64 */
@@ -615,6 +695,19 @@ export interface components {
             pending_orders?: number;
             /** Format: int64 */
             revenue_minor?: number;
+        };
+        AcceptRestaurantOrderRequest: {
+            prep_minutes: number;
+        };
+        RejectRestaurantOrderRequest: {
+            /** @enum {string} */
+            reason: "OUT_OF_STOCK" | "TOO_BUSY" | "RESTAURANT_CLOSED" | "OTHER";
+        };
+        KitchenOrder: components["schemas"]["Order"] & {
+            customer_name?: string;
+            customer_phone?: string;
+            prep_minutes?: number;
+            rejection_reason?: string;
         };
         CourierDashboard: {
             active_deliveries?: number;
@@ -689,6 +782,7 @@ export interface components {
     };
     parameters: {
         RestaurantId: string;
+        RestaurantOrderId: string;
         DisputeId: string;
         JobId: string;
         CartToken: string;
@@ -1227,6 +1321,152 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RestaurantDashboard"];
                 };
+            };
+        };
+    };
+    listRestaurantKitchenOrders: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active restaurant kitchen orders */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["KitchenOrder"][];
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    acceptRestaurantKitchenOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RestaurantOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AcceptRestaurantOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Order accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KitchenOrder"];
+                };
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Order is no longer awaiting acceptance */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    startRestaurantKitchenOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RestaurantOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Order is being prepared */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KitchenOrder"];
+                };
+            };
+            /** @description Invalid state transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    rejectRestaurantKitchenOrder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RestaurantOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RejectRestaurantOrderRequest"];
+            };
+        };
+        responses: {
+            /** @description Order rejected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid state transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    markRestaurantKitchenOrderReady: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["RestaurantOrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Order ready for courier pickup */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["KitchenOrder"];
+                };
+            };
+            /** @description Invalid state transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

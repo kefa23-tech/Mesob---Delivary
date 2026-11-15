@@ -146,7 +146,7 @@ FROM orders WHERE id=$1 FOR UPDATE`, orderID).Scan(&restaurantID, &subtotal, &co
 	if total != expectedAmount {
 		return "", false, domain.ErrInvalidPayment
 	}
-	command, err := tx.Exec(ctx, `UPDATE orders SET payment_status='paid',updated_at=now() WHERE id=$1 AND payment_status='pending_payment'`, orderID)
+	command, err := tx.Exec(ctx, `UPDATE orders SET payment_status='paid',status='PAID',updated_at=now() WHERE id=$1 AND payment_status='pending_payment'`, orderID)
 	if err != nil {
 		return "", false, fmt.Errorf("mark order paid: %w", err)
 	}

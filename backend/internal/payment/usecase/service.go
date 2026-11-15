@@ -189,6 +189,11 @@ func (s *Service) afterPaid(ctx context.Context, provider domain.Provider, refer
 	}
 	_ = s.queue.CancelPolling(ctx, provider, reference)
 	_ = s.queue.NotifyRestaurantPaid(ctx, orderID)
+	if scheduler, ok := s.queue.(interface {
+		ScheduleRestaurantSLA(context.Context, string, time.Duration) error
+	}); ok {
+		_ = scheduler.ScheduleRestaurantSLA(ctx, orderID, 5*time.Minute)
+	}
 }
 
 // RepositoryProvider keeps order ownership and allowed payment-method checks in the persistence adapter.

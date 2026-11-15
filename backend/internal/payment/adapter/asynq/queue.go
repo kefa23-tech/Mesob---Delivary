@@ -15,9 +15,10 @@ import (
 )
 
 const (
-	QueueName      = "payments"
-	pollTaskType   = "mesob:payment:poll"
-	notifyTaskType = "mesob:restaurant:order_paid"
+	QueueName             = "payments"
+	pollTaskType          = "mesob:payment:poll"
+	notifyTaskType        = "mesob:restaurant:order_paid"
+	restaurantSLATaskType = "order:restaurant_sla_timeout"
 )
 
 type Queue struct {
@@ -68,6 +69,28 @@ func (q *Queue) NotifyRestaurantPaid(ctx context.Context, orderID string) error 
 	return err
 }
 
+func (q *Queue) ScheduleRestaurantSLA(ctx context.Context, orderID string, delay time.Duration) error {
+	if delay <= 0 {
+		delay = 5 * time.Minute
+	}
+	payload, err := json.Marshal(map[string]string{"order_id": orderID})
+	if err != nil {
+		return err
+	}
+	_, err = q.client.EnqueueContext(ctx, asynq.NewTask(restaurantSLATaskType, payload), asynq.ProcessIn(delay), asynq.Queue(QueueName), asynq.TaskID("restaurant-sla:"+orderID), asynq.MaxRetry(10))
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "task id") {
+		return nil
+	}
+	return err
+}
+func (q *Queue) CancelRestaurantSLA(_ context.Context, orderID string) error {
+	err := q.inspector.DeleteTask(QueueName, "restaurant-sla:"+orderID)
+	if errors.Is(err, asynq.ErrTaskNotFound) {
+		return nil
+	}
+	return err
+}
+
 type pollPayload struct {
 	Provider  domain.Provider `json:"provider"`
 	Reference string          `json:"reference"`
@@ -79,13 +102,16 @@ type poller interface {
 type notifier interface {
 	RestaurantOrderPaid(context.Context, string) error
 }
+type slaTimeoutHandler interface {
+	HandleSLATimeout(context.Context, string) error
+}
 
 type Worker struct {
 	server *asynq.Server
 	mux    *asynq.ServeMux
 }
 
-func NewWorker(redisURL string, paymentPoller poller, notifications notifier) (*Worker, error) {
+func NewWorker(redisURL string, paymentPoller poller, notifications notifier, slaHandlers ...slaTimeoutHandler) (*Worker, error) {
 	opt, err := redisOptions(redisURL)
 	if err != nil {
 		return nil, err
@@ -113,6 +139,20 @@ func NewWorker(redisURL string, paymentPoller poller, notifications notifier) (*
 		}
 		return notifications.RestaurantOrderPaid(ctx, payload.OrderID)
 	})
+	if len(slaHandlers) > 0 {
+		mux.HandleFunc(restaurantSLATaskType, func(ctx context.Context, task *asynq.Task) error {
+			var p struct {
+				OrderID string `json:"order_id"`
+			}
+			if err := json.Unmarshal(task.Payload(), &p); err != nil {
+				return err
+			}
+			if p.OrderID == "" {
+				return errors.New("restaurant SLA task has no order id")
+			}
+			return slaHandlers[0].HandleSLATimeout(ctx, p.OrderID)
+		})
+	}
 	return &Worker{server: asynq.NewServer(opt, asynq.Config{Concurrency: 8, Queues: map[string]int{QueueName: 5, "default": 1}}), mux: mux}, nil
 }
 func (w *Worker) Run() error { return w.server.Run(w.mux) }

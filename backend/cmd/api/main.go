@@ -113,13 +113,15 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	groupCartService := ordersusecase.NewGroupCartService(groupCartStore, orderspostgres.NewRepository(database), 0)
 	groupCartHandler := ordershttp.NewHandler(groupCartService, cfg.WebAppURL)
 	orderRepository := orderspostgres.NewRepository(database)
-	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore)
-	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService)
 	paymentQueue, err := paymentasynq.NewQueue(cfg.RedisURL)
 	if err != nil {
 		return err
 	}
 	defer paymentQueue.Close()
+	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore, paymentQueue)
+	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService)
+	kitchenService := ordersusecase.NewKitchenService(orderRepository, paymentQueue)
+	kitchenHandler := ordershttp.NewKitchenHandler(kitchenService)
 	paymentGateways := paymentclients.Registry{
 		paymentdomain.Chapa:    paymentclients.NewChapaClient(cfg.ChapaAPIURL, cfg.ChapaSecretKey, nil),
 		paymentdomain.Telebirr: paymentclients.NewTelebirrClient(cfg.TelebirrAPIURL, cfg.TelebirrAPIKey, nil),
@@ -128,7 +130,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	ledgerService := ledgerusecase.NewService(ledgerRepository)
 	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
-	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger})
+	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService)
 	if err != nil {
 		return err
 	}
@@ -162,6 +164,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())
 	router.Mount("/api/v1/group-carts", groupCartHandler.Routes())
 	router.Mount("/api/v1/orders", checkoutHandler.Routes())
+	router.Mount("/api/v1/dashboard/restaurant/orders", kitchenHandler.Routes())
 	router.Mount("/api/v1/payments", paymentHandler.Routes())
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}

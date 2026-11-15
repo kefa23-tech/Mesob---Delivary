@@ -52,6 +52,27 @@ func TestOrderStateMachineAllowsOnlyForwardTransitions(t *testing.T) {
 	}
 }
 
+func TestKitchenStateMachineTransitionsAndRejectsInvalidMoves(t *testing.T) {
+	for _, start := range []domain.OrderStatus{domain.OrderPaid, domain.OrderConfirmedCOD} {
+		order := domain.Order{Status: start}
+		if err := order.Transition(domain.OrderAccepted); err != nil {
+			t.Fatalf("%s -> accepted: %v", start, err)
+		}
+		if err := order.Transition(domain.OrderKitchenPreparing); err != nil {
+			t.Fatalf("accepted -> preparing: %v", err)
+		}
+		if err := order.Transition(domain.OrderReadyForPickup); err != nil {
+			t.Fatalf("preparing -> ready: %v", err)
+		}
+	}
+	for _, pair := range [][2]domain.OrderStatus{{domain.OrderPaid, domain.OrderReadyForPickup}, {domain.OrderAccepted, domain.OrderReadyForPickup}, {domain.OrderReadyForPickup, domain.OrderRejectedByRestaurant}} {
+		order := domain.Order{Status: pair[0]}
+		if err := order.Transition(pair[1]); !errors.Is(err, domain.ErrInvalidOrder) {
+			t.Fatalf("%s -> %s should fail; got %v", pair[0], pair[1], err)
+		}
+	}
+}
+
 func TestCheckoutRequiresPaymentAddressAndAStandardOrGroupCart(t *testing.T) {
 	valid := domain.CheckoutRequest{AddressID: "address", PaymentMethod: domain.PaymentCOD, Items: []domain.CheckoutItem{{MenuItemID: "item", Quantity: 1}}}
 	if err := domain.ValidateCheckout(valid); err != nil {

@@ -57,17 +57,30 @@ func (p PaymentMethod) Valid() bool {
 type OrderStatus string
 
 const (
-	OrderPending    OrderStatus = "pending"
-	OrderConfirmed  OrderStatus = "confirmed"
-	OrderPreparing  OrderStatus = "preparing"
-	OrderReady      OrderStatus = "ready"
-	OrderDispatched OrderStatus = "dispatched"
-	OrderDelivered  OrderStatus = "delivered"
-	OrderCancelled  OrderStatus = "cancelled"
+	OrderPending              OrderStatus = "pending"
+	OrderPaid                 OrderStatus = "PAID"
+	OrderConfirmedCOD         OrderStatus = "CONFIRMED_COD"
+	OrderAccepted             OrderStatus = "ACCEPTED"
+	OrderKitchenPreparing     OrderStatus = "PREPARING"
+	OrderConfirmed            OrderStatus = "confirmed"
+	OrderPreparing            OrderStatus = "preparing"
+	OrderReadyForPickup       OrderStatus = "READY_FOR_PICKUP"
+	OrderRejectedByRestaurant OrderStatus = "REJECTED_BY_RESTAURANT"
+	OrderCancelledTimeout     OrderStatus = "CANCELLED_TIMEOUT"
+	OrderReady                OrderStatus = "ready"
+	OrderDispatched           OrderStatus = "dispatched"
+	OrderDelivered            OrderStatus = "delivered"
+	OrderCancelled            OrderStatus = "cancelled"
 )
 
 func (s OrderStatus) CanTransition(next OrderStatus) bool {
 	switch s {
+	case OrderPaid, OrderConfirmedCOD:
+		return next == OrderAccepted || next == OrderRejectedByRestaurant || next == OrderCancelledTimeout
+	case OrderAccepted:
+		return next == OrderKitchenPreparing || next == OrderRejectedByRestaurant
+	case OrderKitchenPreparing:
+		return next == OrderReadyForPickup || next == OrderRejectedByRestaurant
 	case OrderPending:
 		return next == OrderConfirmed || next == OrderCancelled
 	case OrderConfirmed:
@@ -81,6 +94,27 @@ func (s OrderStatus) CanTransition(next OrderStatus) bool {
 	default:
 		return false
 	}
+}
+
+type KitchenOrder struct {
+	Order
+	CustomerName    string `json:"customer_name"`
+	CustomerPhone   string `json:"customer_phone"`
+	PrepMinutes     *int   `json:"prep_minutes,omitempty"`
+	RejectionReason string `json:"rejection_reason,omitempty"`
+}
+
+type RestaurantRejectionReason string
+
+const (
+	RejectOutOfStock       RestaurantRejectionReason = "OUT_OF_STOCK"
+	RejectTooBusy          RestaurantRejectionReason = "TOO_BUSY"
+	RejectRestaurantClosed RestaurantRejectionReason = "RESTAURANT_CLOSED"
+	RejectOther            RestaurantRejectionReason = "OTHER"
+)
+
+func (r RestaurantRejectionReason) Valid() bool {
+	return r == RejectOutOfStock || r == RejectTooBusy || r == RejectRestaurantClosed || r == RejectOther
 }
 
 type CheckoutItem struct {

@@ -69,7 +69,7 @@ func (r *Repository) Place(ctx context.Context, userID, key string, request doma
 		}
 		err = tx.QueryRow(ctx, `SELECT
 count(*) FILTER (WHERE status='delivered'),
-count(*) FILTER (WHERE status='cancelled' AND payment_method='COD' AND payment_status <> 'paid')
+count(*) FILTER (WHERE status IN ('cancelled','REJECTED_BY_RESTAURANT','CANCELLED_TIMEOUT') AND payment_method='COD' AND payment_status <> 'paid')
 FROM orders WHERE user_id=$1`, userID).Scan(&completedOrders, &unpaidCancellations)
 		if err != nil {
 			return domain.Order{}, fmt.Errorf("load COD customer history: %w", err)
@@ -190,6 +190,9 @@ WHERE og.menu_item_id=$1 ORDER BY og.sort_order, og.id, o.sort_order, o.id`, id)
 		paymentStatus = "pending_payment"
 	}
 	order := domain.Order{UserID: userID, RestaurantID: restaurantID, AddressID: request.AddressID, Status: domain.OrderPending, PaymentMethod: request.PaymentMethod, PaymentStatus: paymentStatus, DeliveryFeeMinor: DeliveryFeeMinor, Currency: "ETB", Items: make([]domain.OrderItem, 0, len(lines))}
+	if request.PaymentMethod == domain.PaymentCOD {
+		order.Status = domain.OrderConfirmedCOD
+	}
 	for _, line := range lines {
 		item := items[line.MenuItemID]
 		if !domain.ValidateSelections(item.menu, line.Options) {
@@ -229,7 +232,7 @@ WHERE id=$1 AND stock_limit IS NOT NULL AND COALESCE(stock_remaining, stock_limi
 	var placed time.Time
 	err = tx.QueryRow(ctx, `INSERT INTO orders(user_id, restaurant_id, delivery_address_id, status, payment_status, payment_method,
 subtotal_minor, delivery_fee_minor, commission_minor, total_minor, currency, placed_at, idempotency_key)
-VALUES($1,$2,$3,'pending',CASE WHEN $4='COD' THEN 'pending' ELSE 'pending_payment' END,$4,$5,$6,$7,$8,'ETB',now(),$9) RETURNING id::text, placed_at`, userID, restaurantID, request.AddressID, string(request.PaymentMethod), order.SubtotalMinor, order.DeliveryFeeMinor, order.CommissionMinor, order.TotalMinor, key).Scan(&order.ID, &placed)
+VALUES($1,$2,$3,CASE WHEN $4='COD' THEN 'CONFIRMED_COD' ELSE 'pending' END,CASE WHEN $4='COD' THEN 'pending' ELSE 'pending_payment' END,$4,$5,$6,$7,$8,'ETB',now(),$9) RETURNING id::text, placed_at`, userID, restaurantID, request.AddressID, string(request.PaymentMethod), order.SubtotalMinor, order.DeliveryFeeMinor, order.CommissionMinor, order.TotalMinor, key).Scan(&order.ID, &placed)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: %w", err)
 	}
@@ -246,6 +249,151 @@ VALUES($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING id::text`, order.ID, item.MenuItem
 		return domain.Order{}, fmt.Errorf("commit checkout: %w", err)
 	}
 	return order, nil
+}
+
+func (r *Repository) ListRestaurantOrders(ctx context.Context, partnerID string) ([]domain.KitchenOrder, error) {
+	rows, err := r.pool.Query(ctx, `SELECT o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,u.name,u.phone,o.prep_minutes,COALESCE(o.rejection_reason,'')
+FROM orders o JOIN restaurants r ON r.id=o.restaurant_id JOIN users u ON u.id=o.user_id
+WHERE r.owner_id=$1 AND u.role='restaurant_owner' AND o.status IN ('PAID','CONFIRMED_COD','ACCEPTED','PREPARING','READY_FOR_PICKUP') ORDER BY o.placed_at`, partnerID)
+	if err != nil {
+		return nil, fmt.Errorf("list restaurant orders: %w", err)
+	}
+	defer rows.Close()
+	orders := make([]domain.KitchenOrder, 0)
+	for rows.Next() {
+		var o domain.KitchenOrder
+		var placed *time.Time
+		var prep *int
+		if err := rows.Scan(&o.ID, &o.UserID, &o.RestaurantID, &o.AddressID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.SubtotalMinor, &o.DeliveryFeeMinor, &o.CommissionMinor, &o.TotalMinor, &o.Currency, &placed, &o.CustomerName, &o.CustomerPhone, &prep, &o.RejectionReason); err != nil {
+			return nil, err
+		}
+		if placed != nil {
+			o.PlacedAt = placed.UTC().Format(time.RFC3339Nano)
+		}
+		o.PrepMinutes = prep
+		itemRows, err := r.pool.Query(ctx, `SELECT id::text,menu_item_id::text,item_name,unit_price_minor,quantity,options,line_total_minor FROM order_items WHERE order_id=$1 ORDER BY created_at,id`, o.ID)
+		if err != nil {
+			return nil, err
+		}
+		for itemRows.Next() {
+			var i domain.OrderItem
+			var menuID *string
+			var options []byte
+			if err := itemRows.Scan(&i.ID, &menuID, &i.ItemName, &i.UnitPriceMinor, &i.Quantity, &options, &i.LineTotalMinor); err != nil {
+				itemRows.Close()
+				return nil, err
+			}
+			if menuID != nil {
+				i.MenuItemID = *menuID
+			}
+			_ = json.Unmarshal(options, &i.Options)
+			o.Items = append(o.Items, i)
+		}
+		itemRows.Close()
+		orders = append(orders, o)
+	}
+	return orders, rows.Err()
+}
+
+func (r *Repository) AcceptRestaurantOrder(ctx context.Context, partnerID, orderID string, prepMinutes int) (domain.KitchenOrder, error) {
+	return r.transitionKitchenOrder(ctx, partnerID, orderID, []string{"PAID", "CONFIRMED_COD"}, domain.OrderAccepted, prepMinutes, "")
+}
+func (r *Repository) StartRestaurantOrder(ctx context.Context, partnerID, orderID string) (domain.KitchenOrder, error) {
+	return r.transitionKitchenOrder(ctx, partnerID, orderID, []string{"ACCEPTED"}, domain.OrderKitchenPreparing, 0, "")
+}
+func (r *Repository) MarkRestaurantOrderReady(ctx context.Context, partnerID, orderID string) (domain.KitchenOrder, error) {
+	return r.transitionKitchenOrder(ctx, partnerID, orderID, []string{"PREPARING"}, domain.OrderReadyForPickup, 0, "")
+}
+func (r *Repository) transitionKitchenOrder(ctx context.Context, partnerID, orderID string, from []string, next domain.OrderStatus, prep int, reason string) (domain.KitchenOrder, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return domain.KitchenOrder{}, fmt.Errorf("begin kitchen transition: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var o domain.KitchenOrder
+	var placed time.Time
+	var prepValue int
+	err = tx.QueryRow(ctx, `UPDATE orders o SET status=$3,prep_minutes=CASE WHEN $4>0 THEN $4 ELSE prep_minutes END,accepted_at=CASE WHEN $3='ACCEPTED' THEN now() ELSE accepted_at END,updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status=ANY($5::text[]) RETURNING o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,COALESCE(o.prep_minutes,0)`, orderID, partnerID, string(next), prep, from).Scan(&o.ID, &o.UserID, &o.RestaurantID, &o.AddressID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.SubtotalMinor, &o.DeliveryFeeMinor, &o.CommissionMinor, &o.TotalMinor, &o.Currency, &placed, &prepValue)
+	if err != nil {
+		return domain.KitchenOrder{}, fmt.Errorf("transition kitchen order: %w", err)
+	}
+	o.PlacedAt = placed.UTC().Format(time.RFC3339Nano)
+	if prepValue > 0 {
+		o.PrepMinutes = &prepValue
+	}
+	if next == domain.OrderAccepted {
+		_, err = tx.Exec(ctx, `INSERT INTO order_events(order_id,event_type,payload) VALUES($1,'restaurant.dispatch_requested','{}'::jsonb) ON CONFLICT(order_id,event_type) DO NOTHING`, orderID)
+	}
+	if next == domain.OrderReadyForPickup {
+		_, err = tx.Exec(ctx, `INSERT INTO order_events(order_id,event_type,payload) VALUES($1,'courier.order_ready','{}'::jsonb) ON CONFLICT(order_id,event_type) DO NOTHING`, orderID)
+	}
+	if err != nil {
+		return domain.KitchenOrder{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.KitchenOrder{}, fmt.Errorf("commit kitchen transition: %w", err)
+	}
+	return o, nil
+}
+
+func (r *Repository) RejectRestaurantOrder(ctx context.Context, partnerID, orderID string, reason domain.RestaurantRejectionReason) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var method string
+	err = tx.QueryRow(ctx, `UPDATE orders o SET status='REJECTED_BY_RESTAURANT',rejection_reason=$3,updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status IN ('PAID','CONFIRMED_COD','ACCEPTED','PREPARING') RETURNING o.payment_method`, orderID, partnerID, string(reason)).Scan(&method)
+	if err != nil {
+		return fmt.Errorf("reject restaurant order: %w", err)
+	}
+	if err := restoreOrderInventory(ctx, tx, orderID); err != nil {
+		return err
+	}
+	if method != "COD" {
+		_, err = tx.Exec(ctx, `UPDATE orders SET payment_status='refund_pending' WHERE id=$1 AND payment_status='paid'`, orderID)
+		if err == nil {
+			_, err = tx.Exec(ctx, `INSERT INTO order_events(order_id,event_type,payload) VALUES($1,'payment.refund_requested',jsonb_build_object('reason',$2)) ON CONFLICT(order_id,event_type) DO NOTHING`, orderID, string(reason))
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *Repository) TimeoutRestaurantOrder(ctx context.Context, orderID string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var method string
+	err = tx.QueryRow(ctx, `UPDATE orders SET status='CANCELLED_TIMEOUT',updated_at=now() WHERE id=$1 AND status IN ('PAID','CONFIRMED_COD') RETURNING payment_method`, orderID).Scan(&method)
+	if err == pgx.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := restoreOrderInventory(ctx, tx, orderID); err != nil {
+		return err
+	}
+	if method != "COD" {
+		_, err = tx.Exec(ctx, `UPDATE orders SET payment_status='refund_pending' WHERE id=$1 AND payment_status='paid'`, orderID)
+		if err == nil {
+			_, err = tx.Exec(ctx, `INSERT INTO order_events(order_id,event_type,payload) VALUES($1,'payment.refund_requested',jsonb_build_object('reason','RESTAURANT_SLA_TIMEOUT')) ON CONFLICT(order_id,event_type) DO NOTHING`, orderID)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func restoreOrderInventory(ctx context.Context, tx pgx.Tx, orderID string) error {
+	_, err := tx.Exec(ctx, `UPDATE menu_items mi SET stock_remaining=LEAST(mi.stock_limit,COALESCE(mi.stock_remaining,mi.stock_limit)+oi.quantity),updated_at=now() FROM (SELECT menu_item_id,SUM(quantity)::integer AS quantity FROM order_items WHERE order_id=$1 AND menu_item_id IS NOT NULL GROUP BY menu_item_id) oi WHERE mi.id=oi.menu_item_id AND mi.stock_limit IS NOT NULL`, orderID)
+	return err
 }
 func (r *Repository) GetMenuItem(ctx context.Context, restaurantID, itemID string) (domain.MenuItem, error) {
 	var item domain.MenuItem

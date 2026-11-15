@@ -12,10 +12,15 @@ type CheckoutService struct {
 	orders      CheckoutRepository
 	idempotency IdempotencyStore
 	carts       GroupCartConverter
+	scheduler   RestaurantSLAScheduler
 }
 
-func NewCheckoutService(orders CheckoutRepository, idempotency IdempotencyStore, carts GroupCartConverter) *CheckoutService {
-	return &CheckoutService{orders: orders, idempotency: idempotency, carts: carts}
+func NewCheckoutService(orders CheckoutRepository, idempotency IdempotencyStore, carts GroupCartConverter, schedulers ...RestaurantSLAScheduler) *CheckoutService {
+	s := &CheckoutService{orders: orders, idempotency: idempotency, carts: carts}
+	if len(schedulers) > 0 {
+		s.scheduler = schedulers[0]
+	}
+	return s
 }
 
 // Place returns an already serialized order body on replay so the HTTP adapter can
@@ -67,6 +72,9 @@ func (s *CheckoutService) Place(ctx context.Context, userID, key string, request
 	// From this point the database has committed; keep the Redis claim even if
 	// response caching fails, so a retry cannot execute checkout a second time.
 	complete = true
+	if request.PaymentMethod == domain.PaymentCOD && s.scheduler != nil {
+		_ = s.scheduler.ScheduleRestaurantSLA(ctx, order.ID, RestaurantAcceptanceSLA)
+	}
 	body, err := json.Marshal(order)
 	if err != nil {
 		return nil, false, err
