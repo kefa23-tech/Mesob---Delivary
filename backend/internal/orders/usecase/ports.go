@@ -31,6 +31,8 @@ type RestaurantSLAScheduler interface {
 	CancelRestaurantSLA(context.Context, string) error
 }
 
+type DispatchStarter interface { StartDispatch(context.Context,string) error }
+
 type IdempotencyStore interface {
 	Begin(context.Context, string, string) (cached []byte, inFlight bool, err error)
 	Complete(context.Context, string, string, []byte) error

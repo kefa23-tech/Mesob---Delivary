@@ -2,8 +2,11 @@ package postgres
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"sort"
 	"time"
 
@@ -230,12 +233,17 @@ WHERE id=$1 AND stock_limit IS NOT NULL AND COALESCE(stock_remaining, stock_limi
 		}
 	}
 	var placed time.Time
+	deliveryPIN, err := newDeliveryPIN()
+	if err != nil { return domain.Order{}, fmt.Errorf("generate delivery PIN: %w",err) }
 	err = tx.QueryRow(ctx, `INSERT INTO orders(user_id, restaurant_id, delivery_address_id, status, payment_status, payment_method,
 subtotal_minor, delivery_fee_minor, commission_minor, total_minor, currency, placed_at, idempotency_key)
 VALUES($1,$2,$3,CASE WHEN $4='COD' THEN 'CONFIRMED_COD' ELSE 'pending' END,CASE WHEN $4='COD' THEN 'pending' ELSE 'pending_payment' END,$4,$5,$6,$7,$8,'ETB',now(),$9) RETURNING id::text, placed_at`, userID, restaurantID, request.AddressID, string(request.PaymentMethod), order.SubtotalMinor, order.DeliveryFeeMinor, order.CommissionMinor, order.TotalMinor, key).Scan(&order.ID, &placed)
 	if err != nil {
 		return domain.Order{}, fmt.Errorf("create order: %w", err)
 	}
+	pinHash:=sha256.Sum256([]byte(order.ID+":"+deliveryPIN))
+	if _,err:=tx.Exec(ctx,`UPDATE orders SET delivery_pin_hash=$2 WHERE id=$1`,order.ID,pinHash[:]);err!=nil{return domain.Order{},fmt.Errorf("save delivery PIN hash: %w",err)}
+	order.DeliveryPIN=deliveryPIN
 	order.PlacedAt = placed.UTC().Format(time.RFC3339Nano)
 	for index := range order.Items {
 		item := &order.Items[index]
@@ -251,10 +259,12 @@ VALUES($1,$2,$3,$4,$5,$6::jsonb,$7) RETURNING id::text`, order.ID, item.MenuItem
 	return order, nil
 }
 
+func newDeliveryPIN()(string,error){n,err:=rand.Int(rand.Reader,big.NewInt(10_000));if err!=nil{return "",err};return fmt.Sprintf("%04d",n.Int64()),nil}
+
 func (r *Repository) ListRestaurantOrders(ctx context.Context, partnerID string) ([]domain.KitchenOrder, error) {
 	rows, err := r.pool.Query(ctx, `SELECT o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,u.name,u.phone,o.prep_minutes,COALESCE(o.rejection_reason,'')
 FROM orders o JOIN restaurants r ON r.id=o.restaurant_id JOIN users u ON u.id=o.user_id
-WHERE r.owner_id=$1 AND u.role='restaurant_owner' AND o.status IN ('PAID','CONFIRMED_COD','ACCEPTED','PREPARING','READY_FOR_PICKUP') ORDER BY o.placed_at`, partnerID)
+WHERE r.owner_id=$1 AND u.role='restaurant_owner' AND o.status IN ('PAID','CONFIRMED_COD','ACCEPTED','PREPARING','READY_FOR_PICKUP','COURIER_ASSIGNED') ORDER BY o.placed_at`, partnerID)
 	if err != nil {
 		return nil, fmt.Errorf("list restaurant orders: %w", err)
 	}
@@ -302,7 +312,11 @@ func (r *Repository) StartRestaurantOrder(ctx context.Context, partnerID, orderI
 	return r.transitionKitchenOrder(ctx, partnerID, orderID, []string{"ACCEPTED"}, domain.OrderKitchenPreparing, 0, "")
 }
 func (r *Repository) MarkRestaurantOrderReady(ctx context.Context, partnerID, orderID string) (domain.KitchenOrder, error) {
-	return r.transitionKitchenOrder(ctx, partnerID, orderID, []string{"PREPARING"}, domain.OrderReadyForPickup, 0, "")
+	tx,err:=r.pool.Begin(ctx);if err!=nil{return domain.KitchenOrder{},err};defer func(){_=tx.Rollback(context.Background())}()
+	var o domain.KitchenOrder;var placed time.Time
+	err=tx.QueryRow(ctx,`UPDATE orders o SET status=CASE WHEN o.courier_id IS NULL THEN 'READY_FOR_PICKUP' ELSE 'COURIER_ASSIGNED' END,ready_at=COALESCE(o.ready_at,now()),updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status IN ('PREPARING','COURIER_ASSIGNED') RETURNING o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,COALESCE(o.prep_minutes,0)`,orderID,partnerID).Scan(&o.ID,&o.UserID,&o.RestaurantID,&o.AddressID,&o.Status,&o.PaymentMethod,&o.PaymentStatus,&o.SubtotalMinor,&o.DeliveryFeeMinor,&o.CommissionMinor,&o.TotalMinor,&o.Currency,&placed,&o.PrepMinutes)
+	if err!=nil{return domain.KitchenOrder{},fmt.Errorf("mark order ready: %w",err)};o.PlacedAt=placed.UTC().Format(time.RFC3339Nano)
+	if _,err=tx.Exec(ctx,`INSERT INTO order_events(order_id,event_type,payload) VALUES($1,'courier.order_ready','{}'::jsonb) ON CONFLICT(order_id,event_type) DO NOTHING`,orderID);err!=nil{return domain.KitchenOrder{},err};if err=tx.Commit(ctx);err!=nil{return domain.KitchenOrder{},err};return o,nil
 }
 func (r *Repository) transitionKitchenOrder(ctx context.Context, partnerID, orderID string, from []string, next domain.OrderStatus, prep int, reason string) (domain.KitchenOrder, error) {
 	tx, err := r.pool.Begin(ctx)

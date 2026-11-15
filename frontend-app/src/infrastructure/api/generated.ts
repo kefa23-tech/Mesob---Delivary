@@ -372,6 +372,119 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courier/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["updateCourierStatus"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["updateCourierLocation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/offers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["listCourierOffers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/offers/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Server-sent events; each offer is emitted as an `offer` event with a CourierOffer JSON payload. */
+        get: operations["streamCourierOffers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/offers/{order_id}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["acceptCourierOffer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/deliveries/{order_id}/pickup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["pickupCourierDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/deliveries/{order_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["completeCourierDelivery"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -657,7 +770,7 @@ export interface components {
             /** Format: uuid */
             address_id: string;
             /** @enum {string} */
-            status: "pending" | "confirmed" | "preparing" | "ready" | "dispatched" | "delivered" | "cancelled" | "PAID" | "CONFIRMED_COD" | "ACCEPTED" | "PREPARING" | "READY_FOR_PICKUP" | "REJECTED_BY_RESTAURANT" | "CANCELLED_TIMEOUT";
+            status: "pending" | "confirmed" | "preparing" | "ready" | "dispatched" | "delivered" | "cancelled" | "PAID" | "CONFIRMED_COD" | "ACCEPTED" | "PREPARING" | "READY_FOR_PICKUP" | "COURIER_ASSIGNED" | "PICKED_UP" | "DELIVERED" | "REJECTED_BY_RESTAURANT" | "CANCELLED_TIMEOUT";
             /** @enum {string} */
             payment_method: "TELEBIRR" | "CHAPA" | "COD";
             /** @enum {string} */
@@ -672,6 +785,8 @@ export interface components {
             total_minor: number;
             /** @example ETB */
             currency: string;
+            /** @description One-time customer delivery verification PIN returned at checkout */
+            delivery_pin?: string;
             items: components["schemas"]["OrderItem"][];
             /** Format: date-time */
             placed_at: string;
@@ -714,6 +829,31 @@ export interface components {
             /** Format: int64 */
             cash_balance_minor?: number;
             available?: boolean;
+        };
+        CourierStatusRequest: {
+            online: boolean;
+            /** @enum {string} */
+            vehicle_type: "bicycle" | "motorbike" | "car";
+        };
+        CourierLocationRequest: {
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lng: number;
+        };
+        CourierOffer: {
+            /** Format: uuid */
+            order_id: string;
+            /** Format: uuid */
+            courier_id: string;
+            distance_km: number;
+            expires_in_seconds: number;
+        };
+        CourierOffersResponse: {
+            data: string[];
+        };
+        CompleteDeliveryRequest: {
+            pin: string;
         };
         UserPage: {
             data?: components["schemas"]["User"][];
@@ -1487,6 +1627,210 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CourierDashboard"];
                 };
+            };
+        };
+    };
+    updateCourierStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourierStatusRequest"];
+            };
+        };
+        responses: {
+            /** @description Availability updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Invalid courier status */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateCourierLocation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CourierLocationRequest"];
+            };
+        };
+        responses: {
+            /** @description Location and heartbeat updated */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Invalid coordinates or courier unavailable */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    listCourierOffers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active offers */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourierOffersResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    streamCourierOffers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Live courier offer events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    acceptCourierOffer: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Order claimed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Order already claimed or courier ineligible */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Offer expired */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    pickupCourierDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Delivery marked picked up */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Invalid delivery transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    completeCourierDelivery: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CompleteDeliveryRequest"];
+            };
+        };
+        responses: {
+            /** @description Delivery completed and settlement recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Invalid delivery transition */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Invalid delivery PIN */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

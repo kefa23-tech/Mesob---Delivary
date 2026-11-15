@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/mesob-delivery/backend/internal/orders/domain"
@@ -12,10 +13,15 @@ const RestaurantAcceptanceSLA = 5 * time.Minute
 type KitchenService struct {
 	repository KitchenRepository
 	scheduler  RestaurantSLAScheduler
+	dispatcher DispatchStarter
 }
 
-func NewKitchenService(repository KitchenRepository, scheduler RestaurantSLAScheduler) *KitchenService {
-	return &KitchenService{repository: repository, scheduler: scheduler}
+func NewKitchenService(repository KitchenRepository, scheduler RestaurantSLAScheduler, dispatchers ...DispatchStarter) *KitchenService {
+	s := &KitchenService{repository: repository, scheduler: scheduler}
+	if len(dispatchers) > 0 {
+		s.dispatcher = dispatchers[0]
+	}
+	return s
 }
 
 func (s *KitchenService) List(ctx context.Context, partnerID string) ([]domain.KitchenOrder, error) {
@@ -35,6 +41,11 @@ func (s *KitchenService) Accept(ctx context.Context, partnerID, orderID string, 
 	}
 	if s.scheduler != nil {
 		_ = s.scheduler.CancelRestaurantSLA(ctx, orderID)
+	}
+	if s.dispatcher != nil {
+		if err := s.dispatcher.StartDispatch(ctx, orderID); err != nil {
+			return domain.KitchenOrder{}, fmt.Errorf("schedule courier dispatch: %w", err)
+		}
 	}
 	return order, nil
 }

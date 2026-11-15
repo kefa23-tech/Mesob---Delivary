@@ -146,6 +146,7 @@ type Order struct {
 	RestaurantID     string        `json:"restaurant_id"`
 	AddressID        string        `json:"address_id"`
 	Status           OrderStatus   `json:"status"`
+	KitchenStatus    OrderStatus   `json:"restaurant_status,omitempty"`
 	PaymentMethod    PaymentMethod `json:"payment_method"`
 	PaymentStatus    string        `json:"payment_status"`
 	SubtotalMinor    int64         `json:"subtotal_minor"`
@@ -155,6 +156,7 @@ type Order struct {
 	Currency         string        `json:"currency"`
 	Items            []OrderItem   `json:"items"`
 	PlacedAt         string        `json:"placed_at"`
+	DeliveryPIN      string        `json:"delivery_pin,omitempty"`
 }
 
 func (o *Order) Transition(next OrderStatus) error {

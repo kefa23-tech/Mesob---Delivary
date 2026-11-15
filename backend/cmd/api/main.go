@@ -25,6 +25,11 @@ import (
 	catalogpostgres "github.com/mesob-delivery/backend/internal/catalog/adapter/postgres"
 	catalogredis "github.com/mesob-delivery/backend/internal/catalog/adapter/redis"
 	catalogusecase "github.com/mesob-delivery/backend/internal/catalog/usecase"
+	dispatchasynq "github.com/mesob-delivery/backend/internal/dispatch/adapter/asynq"
+	dispatchhttp "github.com/mesob-delivery/backend/internal/dispatch/adapter/http"
+	dispatchpostgres "github.com/mesob-delivery/backend/internal/dispatch/adapter/postgres"
+	dispatchredis "github.com/mesob-delivery/backend/internal/dispatch/adapter/redis"
+	dispatchusecase "github.com/mesob-delivery/backend/internal/dispatch/usecase"
 	healthhttp "github.com/mesob-delivery/backend/internal/health/adapter/http"
 	healthusecase "github.com/mesob-delivery/backend/internal/health/usecase"
 	ledgerpostgres "github.com/mesob-delivery/backend/internal/ledger/adapter/postgres"
@@ -118,9 +123,21 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 		return err
 	}
 	defer paymentQueue.Close()
+	dispatchRegistry, err := dispatchredis.New(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer dispatchRegistry.Close()
+	dispatchQueue, err := dispatchasynq.NewQueue(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer dispatchQueue.Close()
+	dispatchService := dispatchusecase.NewService(dispatchpostgres.NewRepository(database), dispatchRegistry, dispatchQueue, dispatchRegistry)
+	dispatchHandler := dispatchhttp.NewHandler(dispatchService)
 	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore, paymentQueue)
 	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService)
-	kitchenService := ordersusecase.NewKitchenService(orderRepository, paymentQueue)
+	kitchenService := ordersusecase.NewKitchenService(orderRepository, paymentQueue, dispatchQueue)
 	kitchenHandler := ordershttp.NewKitchenHandler(kitchenService)
 	paymentGateways := paymentclients.Registry{
 		paymentdomain.Chapa:    paymentclients.NewChapaClient(cfg.ChapaAPIURL, cfg.ChapaSecretKey, nil),
@@ -138,6 +155,16 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	go func() {
 		if err := paymentWorker.Run(); err != nil {
 			logger.Error("payment worker stopped", "error", err)
+		}
+	}()
+	dispatchWorker, err := dispatchasynq.NewWorker(cfg.RedisURL, dispatchService)
+	if err != nil {
+		return err
+	}
+	defer dispatchWorker.Shutdown()
+	go func() {
+		if err := dispatchWorker.Run(); err != nil {
+			logger.Error("dispatch worker stopped", "error", err)
 		}
 	}()
 	users := authpostgres.NewUserRepository(database)
@@ -165,6 +192,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1/group-carts", groupCartHandler.Routes())
 	router.Mount("/api/v1/orders", checkoutHandler.Routes())
 	router.Mount("/api/v1/dashboard/restaurant/orders", kitchenHandler.Routes())
+	router.Mount("/api/v1/courier", dispatchHandler.Routes())
 	router.Mount("/api/v1/payments", paymentHandler.Routes())
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}

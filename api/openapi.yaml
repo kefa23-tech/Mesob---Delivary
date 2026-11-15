@@ -219,6 +219,48 @@ paths:
       tags: [Courier]
       operationId: getCourierDashboard
       responses: { '200': { description: Courier dashboard, content: { application/json: { schema: { $ref: '#/components/schemas/CourierDashboard' } } } } }
+  /courier/status:
+    post:
+      tags: [Courier]
+      operationId: updateCourierStatus
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CourierStatusRequest' } } } }
+      responses: { '200': { description: Availability updated }, '401': { $ref: '#/components/responses/Unauthorized' }, '422': { description: Invalid courier status } }
+  /courier/location:
+    post:
+      tags: [Courier]
+      operationId: updateCourierLocation
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CourierLocationRequest' } } } }
+      responses: { '202': { description: Location and heartbeat updated }, '401': { $ref: '#/components/responses/Unauthorized' }, '422': { description: Invalid coordinates or courier unavailable } }
+  /courier/offers:
+    get:
+      tags: [Courier]
+      operationId: listCourierOffers
+      responses: { '200': { description: Active offers, content: { application/json: { schema: { $ref: '#/components/schemas/CourierOffersResponse' } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /courier/offers/stream:
+    get:
+      tags: [Courier]
+      operationId: streamCourierOffers
+      description: Server-sent events; each offer is emitted as an `offer` event with a CourierOffer JSON payload.
+      responses: { '200': { description: Live courier offer events, content: { text/event-stream: { schema: { type: string } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /courier/offers/{order_id}/accept:
+    post:
+      tags: [Courier]
+      operationId: acceptCourierOffer
+      parameters: [{ name: order_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Order claimed }, '401': { $ref: '#/components/responses/Unauthorized' }, '409': { description: Order already claimed or courier ineligible }, '410': { description: Offer expired } }
+  /courier/deliveries/{order_id}/pickup:
+    post:
+      tags: [Courier]
+      operationId: pickupCourierDelivery
+      parameters: [{ name: order_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Delivery marked picked up }, '401': { $ref: '#/components/responses/Unauthorized' }, '409': { description: Invalid delivery transition } }
+  /courier/deliveries/{order_id}/complete:
+    post:
+      tags: [Courier]
+      operationId: completeCourierDelivery
+      parameters: [{ name: order_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/CompleteDeliveryRequest' } } } }
+      responses: { '200': { description: Delivery completed and settlement recorded }, '401': { $ref: '#/components/responses/Unauthorized' }, '409': { description: Invalid delivery transition }, '422': { description: Invalid delivery PIN } }
   /admin/users:
     get:
       tags: [Admin]
@@ -294,7 +336,7 @@ components:
     CreateOrderRequest: { type: object, required: [address_id, payment_method], properties: { address_id: { type: string, format: uuid }, payment_method: { type: string, enum: [TELEBIRR, CHAPA, COD] }, group_cart_token: { type: string }, items: { type: array, items: { $ref: '#/components/schemas/OrderItemInput' } } } }
     OrderItemInput: { type: object, required: [menu_item_id, quantity], properties: { menu_item_id: { type: string, format: uuid }, quantity: { type: integer, minimum: 1 }, options: { type: array, items: { $ref: '#/components/schemas/SelectedOption' } } } }
     OrderItem: { type: object, required: [id, menu_item_id, item_name, unit_price_minor, quantity, options, line_total_minor], properties: { id: { type: string, format: uuid }, menu_item_id: { type: string, format: uuid }, item_name: { type: string }, unit_price_minor: { type: integer, format: int64 }, quantity: { type: integer }, options: { type: array, items: { $ref: '#/components/schemas/SelectedOption' } }, line_total_minor: { type: integer, format: int64 } } }
-    Order: { type: object, required: [id, user_id, restaurant_id, address_id, status, payment_method, payment_status, subtotal_minor, delivery_fee_minor, commission_minor, total_minor, currency, items, placed_at], properties: { id: { type: string, format: uuid }, user_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, status: { type: string, enum: [pending, confirmed, preparing, ready, dispatched, delivered, cancelled, PAID, CONFIRMED_COD, ACCEPTED, PREPARING, READY_FOR_PICKUP, REJECTED_BY_RESTAURANT, CANCELLED_TIMEOUT] }, payment_method: { type: string, enum: [TELEBIRR, CHAPA, COD] }, payment_status: { type: string, enum: [pending, pending_payment, paid, payment_failed, refund_pending] }, subtotal_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 }, commission_minor: { type: integer, format: int64 }, total_minor: { type: integer, format: int64 }, currency: { type: string, example: ETB }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }, placed_at: { type: string, format: date-time } } }
+    Order: { type: object, required: [id, user_id, restaurant_id, address_id, status, payment_method, payment_status, subtotal_minor, delivery_fee_minor, commission_minor, total_minor, currency, items, placed_at], properties: { id: { type: string, format: uuid }, user_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, status: { type: string, enum: [pending, confirmed, preparing, ready, dispatched, delivered, cancelled, PAID, CONFIRMED_COD, ACCEPTED, PREPARING, READY_FOR_PICKUP, COURIER_ASSIGNED, PICKED_UP, DELIVERED, REJECTED_BY_RESTAURANT, CANCELLED_TIMEOUT] }, payment_method: { type: string, enum: [TELEBIRR, CHAPA, COD] }, payment_status: { type: string, enum: [pending, pending_payment, paid, payment_failed, refund_pending] }, subtotal_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 }, commission_minor: { type: integer, format: int64 }, total_minor: { type: integer, format: int64 }, currency: { type: string, example: ETB }, delivery_pin: { type: string, pattern: '^\\d{4}$', description: One-time customer delivery verification PIN returned at checkout }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }, placed_at: { type: string, format: date-time } } }
     PaymentInitialization: { type: object, required: [order_id, provider, reference, checkout_url], properties: { order_id: { type: string, format: uuid }, provider: { type: string, enum: [CHAPA, TELEBIRR] }, reference: { type: string }, checkout_url: { type: string, format: uri } } }
     OrderPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Order' } }, page: { type: integer }, total: { type: integer } } }
     RestaurantDashboard: { type: object, properties: { restaurant: { $ref: '#/components/schemas/Restaurant' }, pending_orders: { type: integer }, revenue_minor: { type: integer, format: int64 } } }
@@ -302,6 +344,11 @@ components:
     RejectRestaurantOrderRequest: { type: object, required: [reason], properties: { reason: { type: string, enum: [OUT_OF_STOCK, TOO_BUSY, RESTAURANT_CLOSED, OTHER] } } }
     KitchenOrder: { allOf: [{ $ref: '#/components/schemas/Order' }, { type: object, properties: { customer_name: { type: string }, customer_phone: { type: string }, prep_minutes: { type: integer }, rejection_reason: { type: string } } }] }
     CourierDashboard: { type: object, properties: { active_deliveries: { type: integer }, cash_balance_minor: { type: integer, format: int64 }, available: { type: boolean } } }
+    CourierStatusRequest: { type: object, required: [online, vehicle_type], properties: { online: { type: boolean }, vehicle_type: { type: string, enum: [bicycle, motorbike, car] } } }
+    CourierLocationRequest: { type: object, required: [lat, lng], properties: { lat: { type: number, format: double, minimum: -90, maximum: 90 }, lng: { type: number, format: double, minimum: -180, maximum: 180 } } }
+    CourierOffer: { type: object, required: [order_id, courier_id, distance_km, expires_in_seconds], properties: { order_id: { type: string, format: uuid }, courier_id: { type: string, format: uuid }, distance_km: { type: number }, expires_in_seconds: { type: integer } } }
+    CourierOffersResponse: { type: object, required: [data], properties: { data: { type: array, items: { type: string, format: uuid } } } }
+    CompleteDeliveryRequest: { type: object, required: [pin], properties: { pin: { type: string, pattern: '^\\d{4}$' } } }
     UserPage: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/User' } }, total: { type: integer } } }
     Dispute: { type: object, required: [id, status], properties: { id: { type: string, format: uuid }, order_id: { type: string, format: uuid }, status: { type: string }, resolution: { type: string } } }
     ResolveDisputeRequest: { type: object, required: [resolution], properties: { resolution: { type: string }, refund_minor: { type: integer, format: int64, minimum: 0 } } }
