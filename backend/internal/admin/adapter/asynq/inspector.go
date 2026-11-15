@@ -93,7 +93,7 @@ func parseRedisOptions(raw string) (asynq.RedisClientOpt, error) {
 		return asynq.RedisClientOpt{}, fmt.Errorf("parse Asynq Redis URL: %w", err)
 	}
 	if u.Host == "" {
-		return asynq.RedisClientOpt{}, errors.New("Redis URL must include host")
+		return asynq.RedisClientOpt{}, errors.New("redis URL must include host")
 	}
 	opt := asynq.RedisClientOpt{Addr: u.Host}
 	if u.User != nil {

@@ -56,7 +56,7 @@ func (c *ChapaClient) Initialize(ctx context.Context, in domain.InitializeReques
 		return domain.InitializeResult{}, err
 	}
 	if response.Status != "success" || response.Data.CheckoutURL == "" {
-		return domain.InitializeResult{}, fmt.Errorf("Chapa initialization rejected: %s", response.Message)
+		return domain.InitializeResult{}, fmt.Errorf("chapa initialization rejected: %s", response.Message)
 	}
 	ref := response.Data.Reference
 	if ref == "" {
@@ -123,7 +123,7 @@ func (c *TelebirrClient) Initialize(ctx context.Context, in domain.InitializeReq
 		return domain.InitializeResult{}, err
 	}
 	if response.Status != "success" || response.CheckoutURL == "" {
-		return domain.InitializeResult{}, fmt.Errorf("Telebirr initialization rejected: %s", response.Message)
+		return domain.InitializeResult{}, fmt.Errorf("telebirr initialization rejected: %s", response.Message)
 	}
 	if response.Reference == "" {
 		response.Reference = in.Reference
@@ -156,7 +156,7 @@ func (c *TelebirrClient) doJSON(ctx context.Context, method, endpoint string, pa
 	return doJSON(ctx, c.client, method, endpoint, c.apiKey, payload, target)
 }
 
-func doJSON(ctx context.Context, client *http.Client, method, endpoint, credential string, payload, target any) error {
+func doJSON(ctx context.Context, client *http.Client, method, endpoint, credential string, payload, target any) (retErr error) {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
@@ -180,7 +180,11 @@ func doJSON(ctx context.Context, client *http.Client, method, endpoint, credenti
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close payment gateway response body: %w", err))
+		}
+	}()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
 		return err

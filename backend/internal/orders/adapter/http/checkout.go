@@ -2,7 +2,6 @@ package http
 
 import (
 	"errors"
-	"io"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -67,5 +66,5 @@ func (h *CheckoutHandler) place(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_, _ = io.WriteString(w, string(body))
+	_, _ = w.Write(body)
 }

@@ -33,7 +33,7 @@ func schedulerRedisOptions(raw string) (asynq.RedisClientOpt, error) {
 		return asynq.RedisClientOpt{}, err
 	}
 	if u.Host == "" {
-		return asynq.RedisClientOpt{}, fmt.Errorf("Redis URL must include host")
+		return asynq.RedisClientOpt{}, fmt.Errorf("redis URL must include host")
 	}
 	opt := asynq.RedisClientOpt{Addr: u.Host}
 	if u.User != nil {

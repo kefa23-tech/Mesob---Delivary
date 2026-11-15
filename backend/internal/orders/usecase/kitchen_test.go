@@ -33,22 +33,6 @@ func (f *fakeKitchenRepository) TimeoutRestaurantOrder(_ context.Context, id str
 	return nil
 }
 
-type fakeSLAScheduler struct {
-	id        string
-	delay     time.Duration
-	cancelled string
-}
-
-func (f *fakeSLAScheduler) ScheduleRestaurantSLA(_ context.Context, id string, d time.Duration) error {
-	f.id = id
-	f.delay = d
-	return nil
-}
-func (f *fakeSLAScheduler) CancelRestaurantSLA(_ context.Context, id string) error {
-	f.cancelled = id
-	return nil
-}
-
 func TestRestaurantSLATimeoutUsesOrderRepository(t *testing.T) {
 	repo := &fakeKitchenRepository{}
 	svc := NewKitchenService(repo, nil)

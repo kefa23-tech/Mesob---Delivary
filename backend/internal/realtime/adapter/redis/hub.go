@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -91,7 +92,11 @@ func (h *Hub) subscribe(ctx context.Context, channel, id string) (<-chan realtim
 	out := make(chan realtime.Event)
 	go func() {
 		defer close(out)
-		defer pubsub.Close()
+		defer func() {
+			if err := pubsub.Close(); err != nil {
+				slog.Warn("failed to close realtime subscription", "error", err)
+			}
+		}()
 		for message := range pubsub.Channel() {
 			var event realtime.Event
 			if err := json.Unmarshal([]byte(message.Payload), &event); err != nil {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -29,7 +30,7 @@ func NewHTTPProvider(endpoint string) *HTTPProvider {
 	return &HTTPProvider{Endpoint: endpoint, Client: &http.Client{Timeout: 5 * time.Second}}
 }
 
-func (p *HTTPProvider) Send(ctx context.Context, destination, code string) error {
+func (p *HTTPProvider) Send(ctx context.Context, destination, code string) (retErr error) {
 	body, err := json.Marshal(map[string]string{"destination": destination, "code": code})
 	if err != nil {
 		return err
@@ -45,7 +46,11 @@ func (p *HTTPProvider) Send(ctx context.Context, destination, code string) error
 	if err != nil {
 		return err
 	}
-	defer response.Body.Close()
+	defer func() {
+		if err := response.Body.Close(); err != nil {
+			retErr = errors.Join(retErr, fmt.Errorf("close OTP gateway response body: %w", err))
+		}
+	}()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		return fmt.Errorf("OTP gateway returned status %d", response.StatusCode)
 	}

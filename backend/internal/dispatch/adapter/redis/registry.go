@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -122,7 +123,11 @@ func (r *Registry) SubscribeOffers(ctx context.Context, courier domain.CourierID
 	out := make(chan domain.Offer)
 	go func() {
 		defer close(out)
-		defer pubsub.Close()
+		defer func() {
+			if err := pubsub.Close(); err != nil {
+				slog.Warn("failed to close courier offer subscription", "error", err)
+			}
+		}()
 		for message := range pubsub.Channel() {
 			var offer domain.Offer
 			if err := json.Unmarshal([]byte(message.Payload), &offer); err != nil {

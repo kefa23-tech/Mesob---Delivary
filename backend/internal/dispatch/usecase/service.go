@@ -163,7 +163,7 @@ func (s *Service) FindCourier(ctx context.Context, orderID domain.OrderID, tier 
 	if err != nil {
 		return err
 	}
-	if order.CourierID != "" || !(order.Status == "ACCEPTED" || order.Status == "PREPARING" || order.Status == "READY_FOR_PICKUP") {
+	if order.CourierID != "" || (order.Status != "ACCEPTED" && order.Status != "PREPARING" && order.Status != "READY_FOR_PICKUP") {
 		return nil
 	}
 	nearby, err := s.presence.Nearby(ctx, order.RestaurantLat, order.RestaurantLng, tier.RadiusKM(), OfferBatchSize)

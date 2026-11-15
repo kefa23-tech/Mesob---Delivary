@@ -121,12 +121,12 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer redisStore.Close()
+	defer closeOnReturn(logger, "auth Redis store", redisStore.Close)()
 	catalogCache, err := catalogredis.New(cfg.RedisURL)
 	if err != nil {
 		return err
 	}
-	defer catalogCache.Close()
+	defer closeOnReturn(logger, "catalog Redis cache", catalogCache.Close)()
 	catalogRepository := catalogpostgres.NewRepository(database)
 	catalogService := catalogusecase.NewServiceWithMenu(catalogRepository, catalogRepository, catalogCache)
 	catalogHandler := cataloghttp.NewHandler(catalogService)
@@ -134,7 +134,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer groupCartStore.Close()
+	defer closeOnReturn(logger, "group cart Redis store", groupCartStore.Close)()
 	groupCartService := ordersusecase.NewGroupCartService(groupCartStore, orderspostgres.NewRepository(database), 0)
 	groupCartHandler := ordershttp.NewHandler(groupCartService, cfg.WebAppURL)
 	orderRepository := orderspostgres.NewRepository(database)
@@ -142,22 +142,22 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer paymentQueue.Close()
+	defer closeOnReturn(logger, "payment task queue", paymentQueue.Close)()
 	dispatchRegistry, err := dispatchredis.New(cfg.RedisURL)
 	if err != nil {
 		return err
 	}
-	defer dispatchRegistry.Close()
+	defer closeOnReturn(logger, "dispatch Redis registry", dispatchRegistry.Close)()
 	dispatchQueue, err := dispatchasynq.NewQueue(cfg.RedisURL)
 	if err != nil {
 		return err
 	}
-	defer dispatchQueue.Close()
+	defer closeOnReturn(logger, "dispatch task queue", dispatchQueue.Close)()
 	realtimeHub, err := realtimeredis.New(cfg.RedisURL)
 	if err != nil {
 		return err
 	}
-	defer realtimeHub.Close()
+	defer closeOnReturn(logger, "realtime Redis hub", realtimeHub.Close)()
 	dispatchService := dispatchusecase.NewService(dispatchpostgres.NewRepository(database), dispatchRegistry, dispatchQueue, dispatchRegistry, realtimeHub)
 	dispatchHandler := dispatchhttp.NewHandler(dispatchService, realtimeHub)
 	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore, paymentQueue, realtimeHub)
@@ -177,7 +177,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer dlqInspector.Close()
+	defer closeOnReturn(logger, "admin DLQ inspector", dlqInspector.Close)()
 	adminHandler.WithDLQ(dlqInspector)
 	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL, realtimeHub)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
@@ -272,7 +272,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	defer rateLimiter.Close()
+	defer closeOnReturn(logger, "HTTP rate limiter", rateLimiter.Close)()
 	router.Use(httpmiddleware.SecurityHeaders)
 	router.Use(httpmiddleware.CORS(cfg.CORSOrigins))
 	router.Use(httpmiddleware.RequestID)
@@ -320,6 +320,14 @@ func envOr(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func closeOnReturn(logger *slog.Logger, resource string, closeFn func() error) func() {
+	return func() {
+		if err := closeFn(); err != nil {
+			logger.Error("failed to close resource", "resource", resource, "error", err)
+		}
+	}
 }
 
 type restaurantPaymentNotifier struct{ logger *slog.Logger }
