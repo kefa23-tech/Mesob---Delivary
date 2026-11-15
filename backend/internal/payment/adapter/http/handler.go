@@ -10,6 +10,7 @@ import (
 	paymentclient "github.com/mesob-delivery/backend/internal/adapter/payment"
 	"github.com/mesob-delivery/backend/internal/payment/domain"
 	"github.com/mesob-delivery/backend/internal/payment/usecase"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 type Handler struct {
@@ -77,9 +78,11 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request, provider domai
 		return
 	}
 	if err := h.service.HandleWebhook(r.Context(), provider, body); err != nil {
+		telemetry.RecordPaymentWebhook(string(provider), "error")
 		writeError(w, http.StatusUnprocessableEntity, "payment_event_rejected", err.Error())
 		return
 	}
+	telemetry.RecordPaymentWebhook(string(provider), "success")
 	writeJSON(w, http.StatusOK, map[string]string{"status": "accepted"})
 }
 

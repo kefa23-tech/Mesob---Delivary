@@ -1,0 +1,31 @@
+groups:
+  - name: mesob-production
+    rules:
+      - alert: MesobLedgerUnbalanced
+        expr: mesob_ledger_balanced != 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: Mesob ledger balance invariant failed
+          description: The global signed sum of ledger lines is nonzero or could not be checked.
+      - alert: MesobApiScrapeMissing
+        expr: up{job="mesob-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: Mesob API metrics scrape is unavailable
+      - alert: MesobDeadLetterTasksIncreasing
+        expr: increase(mesob_dlq_tasks_total[10m]) > 0
+        labels:
+          severity: warning
+        annotations:
+          summary: Mesob background tasks are entering the dead letter queue
+      - alert: MesobApiServerErrors
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total[5m])), 1e-9) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than five percent of Mesob API requests are failing

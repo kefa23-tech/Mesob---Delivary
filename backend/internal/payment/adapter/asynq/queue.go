@@ -14,6 +14,7 @@ import (
 	"github.com/hibiken/asynq"
 	"github.com/mesob-delivery/backend/internal/payment/domain"
 	"github.com/mesob-delivery/backend/internal/platform/workerobs"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 const (
@@ -169,7 +170,9 @@ func NewWorker(redisURL string, paymentPoller poller, notifications notifier, ha
 	if reconciler, ok := paymentPoller.(orphanedPaymentReconciler); ok {
 		mux.HandleFunc(reconcilePaymentsTaskType, func(ctx context.Context, _ *asynq.Task) error { return reconciler.ReconcileOrphanedPayments(ctx) })
 	}
-	return &Worker{server: asynq.NewServer(opt, asynq.Config{Concurrency: 8, Queues: map[string]int{QueueName: 5, "default": 1}, ErrorHandler: workerobs.ErrorHandler(slog.Default())}), mux: mux}, nil
+	server := asynq.NewServer(opt, asynq.Config{Concurrency: 8, Queues: map[string]int{QueueName: 5, "default": 1}, ErrorHandler: workerobs.ErrorHandler(slog.Default())})
+	mux.Use(telemetry.AsynqMiddleware())
+	return &Worker{server: server, mux: mux}, nil
 }
 func (w *Worker) Run() error { return w.server.Run(w.mux) }
 func (w *Worker) Shutdown()  { w.server.Shutdown() }

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"strings"
@@ -15,6 +16,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/getsentry/sentry-go"
+	sentryhttp "github.com/getsentry/sentry-go/http"
 	paymentclients "github.com/mesob-delivery/backend/internal/adapter/payment"
 	"github.com/mesob-delivery/backend/internal/adapter/postgres"
 	adminasynq "github.com/mesob-delivery/backend/internal/admin/adapter/asynq"
@@ -51,8 +54,8 @@ import (
 	paymentdomain "github.com/mesob-delivery/backend/internal/payment/domain"
 	paymentusecase "github.com/mesob-delivery/backend/internal/payment/usecase"
 	"github.com/mesob-delivery/backend/internal/platform/httpmiddleware"
-	"github.com/mesob-delivery/backend/internal/platform/workerobs"
 	realtimeredis "github.com/mesob-delivery/backend/internal/realtime/adapter/redis"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 type config struct {
@@ -104,6 +107,12 @@ func main() {
 }
 
 func run(parent context.Context, cfg config, logger *slog.Logger) error {
+	if dsn := os.Getenv("SENTRY_DSN"); dsn != "" {
+		if err := sentry.Init(sentry.ClientOptions{Dsn: dsn, Environment: envOr("SENTRY_ENVIRONMENT", "production"), EnableTracing: true, TracesSampleRate: 0.1}); err != nil {
+			return fmt.Errorf("initialize Sentry: %w", err)
+		}
+		defer sentry.Flush(2 * time.Second)
+	}
 	if cfg.ProcessRole != "api" && cfg.ProcessRole != "worker" {
 		return errors.New("PROCESS_ROLE must be api or worker")
 	}
@@ -112,6 +121,21 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 			return err
 		}
 	}
+	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	profileServer := &http.Server{Addr: envOr("PPROF_ADDRESS", "127.0.0.1:6060"), Handler: http.DefaultServeMux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		if err := profileServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			logger.Error("Go pprof listener stopped", "address", profileServer.Addr, "error", err)
+		}
+	}()
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		if err := profileServer.Shutdown(shutdownCtx); err != nil {
+			logger.Error("stop Go pprof listener", "error", err)
+		}
+	}()
 	database, err := postgres.Open(parent, cfg.DatabaseURL)
 	if err != nil {
 		return err
@@ -171,6 +195,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	}
 	ledgerRepository := ledgerpostgres.NewRepository(database)
 	ledgerService := ledgerusecase.NewService(ledgerRepository)
+	telemetry.StartLedgerInvariantCollector(ctx, ledgerRepository, logger)
 	adminService := adminusecase.NewOperations(adminpostgres.NewRepository(database))
 	adminHandler := adminhttp.NewHandler(adminService, database)
 	dlqInspector, err := adminasynq.NewInspector(cfg.RedisURL)
@@ -181,8 +206,11 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	adminHandler.WithDLQ(dlqInspector)
 	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL, realtimeHub)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
-	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)
-	defer stop()
+	stopQueueMetrics, err := telemetry.StartAsynqQueueCollector(ctx, cfg.RedisURL, logger)
+	if err != nil {
+		return err
+	}
+	defer closeOnReturn(logger, "Asynq metrics collector", stopQueueMetrics)()
 	if cfg.ProcessRole == "worker" {
 		workerDone := make([]<-chan error, 0, 4)
 		shutdownWorkers := make([]func(), 0, 4)
@@ -278,7 +306,9 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Use(httpmiddleware.RequestID)
 	router.Use(drain.Middleware)
 	router.Use(rateLimiter.Middleware)
-	router.Get("/metrics", workerobs.MetricsHandler)
+	router.Use(telemetry.HTTPMiddleware)
+	router.Use(sentryhttp.New(sentryhttp.Options{Repanic: true}).Handle)
+	router.Get("/metrics", telemetry.Handler().ServeHTTP)
 	router.Mount("/api/v1", healthHandler.Routes())
 	router.Mount("/api/v1/auth", authHandler.Routes())
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())

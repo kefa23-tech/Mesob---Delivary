@@ -1,0 +1,18 @@
+{
+  "annotations": {"list": []},
+  "editable": true,
+  "graphTooltip": 1,
+  "panels": [
+    {"id":1,"title":"API requests / second","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"sum(rate(http_requests_total[5m]))","legendFormat":"all"},{"expr":"sum by (status) (rate(http_requests_total[5m]))","legendFormat":"{{status}}"}],"gridPos":{"h":8,"w":12,"x":0,"y":0}},
+    {"id":2,"title":"API latency p95 (seconds)","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))","legendFormat":"p95"}],"gridPos":{"h":8,"w":12,"x":12,"y":0}},
+    {"id":3,"title":"Asynq queue depth by state","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"mesob_asynq_queue_tasks","legendFormat":"{{queue}} / {{state}}"}],"gridPos":{"h":8,"w":12,"x":0,"y":8}},
+    {"id":4,"title":"Archived / DLQ tasks","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"sum by (queue) (mesob_dlq_tasks_total)","legendFormat":"{{queue}}"}],"gridPos":{"h":8,"w":12,"x":12,"y":8}},
+    {"id":5,"title":"Courier GPS ingestion / second","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"sum(rate(mesob_courier_location_updates_total[5m]))","legendFormat":"accepted updates/s"}],"gridPos":{"h":8,"w":12,"x":0,"y":16}},
+    {"id":6,"title":"Payment webhook success rate","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"sum by (provider) (rate(mesob_payment_webhook_total{result=\"success\"}[5m])) / clamp_min(sum by (provider) (rate(mesob_payment_webhook_total[5m])), 1e-9)","legendFormat":"{{provider}}"}],"gridPos":{"h":8,"w":12,"x":12,"y":16}},
+    {"id":7,"title":"Ledger invariant (1 = balanced, 0 = violation, -1 = check failure)","type":"stat","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"mesob_ledger_balanced"}],"gridPos":{"h":4,"w":12,"x":0,"y":24}},
+    {"id":8,"title":"Active SSE clients","type":"stat","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"mesob_active_sse_connections"}],"gridPos":{"h":4,"w":12,"x":12,"y":24}},
+    {"id":9,"title":"Redis memory used (bytes)","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"redis_memory_used_bytes","legendFormat":"memory"}],"gridPos":{"h":8,"w":12,"x":0,"y":28}},
+    {"id":10,"title":"Redis health and connected clients","type":"timeseries","datasource":{"type":"prometheus","uid":"${DS_PROMETHEUS}"},"targets":[{"expr":"redis_up","legendFormat":"up"},{"expr":"redis_connected_clients","legendFormat":"clients"}],"gridPos":{"h":8,"w":12,"x":12,"y":28}}
+  ],
+  "refresh":"30s","schemaVersion":39,"tags":["mesob","production"],"templating":{"list":[]},"time":{"from":"now-6h","to":"now"},"timezone":"browser","title":"Mesob Production","uid":"mesob-production","version":1
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/mesob-delivery/backend/internal/dispatch/domain"
 	"github.com/mesob-delivery/backend/internal/dispatch/usecase"
 	"github.com/mesob-delivery/backend/internal/realtime"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 type Handler struct {
@@ -82,6 +83,7 @@ func (h *Handler) location(w http.ResponseWriter, r *http.Request) {
 		dispatchError(w, err)
 		return
 	}
+	telemetry.RecordCourierLocation()
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "location_updated"})
 }
 func (h *Handler) offers(w http.ResponseWriter, r *http.Request) {
@@ -109,6 +111,8 @@ func (h *Handler) offerDetails(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, details)
 }
 func (h *Handler) eventsStream(w http.ResponseWriter, r *http.Request) {
+	releaseMetric := telemetry.TrackSSEConnection()
+	defer releaseMetric()
 	if h.realtime == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "courier event stream unavailable"})
 		return
@@ -169,6 +173,8 @@ func writeDispatchSSE(w http.ResponseWriter, name string, value any) error {
 	return err
 }
 func (h *Handler) offerStream(w http.ResponseWriter, r *http.Request) {
+	releaseMetric := telemetry.TrackSSEConnection()
+	defer releaseMetric()
 	stream, err := h.service.OfferStream(r.Context(), domain.CourierID(r.Header.Get("X-User-ID")))
 	if err != nil {
 		dispatchError(w, err)

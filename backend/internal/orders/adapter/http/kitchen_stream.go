@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 func (h *KitchenHandler) StreamRoutes() chi.Router {
@@ -17,6 +18,8 @@ func (h *KitchenHandler) StreamRoutes() chi.Router {
 }
 
 func (h *KitchenHandler) stream(w http.ResponseWriter, r *http.Request) {
+	releaseMetric := telemetry.TrackSSEConnection()
+	defer releaseMetric()
 	if h.realtime == nil {
 		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "restaurant event stream unavailable"})
 		return

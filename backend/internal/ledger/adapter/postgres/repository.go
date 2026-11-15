@@ -13,6 +13,15 @@ import (
 
 type Repository struct{ pool *pgxpool.Pool }
 
+// GlobalBalance returns the signed sum of every ledger line in minor units.
+func (r *Repository) GlobalBalance(ctx context.Context) (int64, error) {
+	var total int64
+	if err := r.pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_minor), 0)::bigint FROM ledger_lines`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("sum global ledger lines: %w", err)
+	}
+	return total, nil
+}
+
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 
 // Record appends an immutable journal entry inside its caller's transaction.

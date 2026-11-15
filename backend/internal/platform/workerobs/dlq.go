@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"sync/atomic"
 
+	"github.com/getsentry/sentry-go"
 	"github.com/hibiken/asynq"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 var archivedTasks atomic.Uint64
@@ -22,6 +24,12 @@ func ErrorHandler(logger *slog.Logger) asynq.ErrorHandler {
 		logger.ErrorContext(ctx, "background task failed", "queue", queue, "task_id", id, "task_type", task.Type(), "retry_count", retries, "max_retries", maxRetries, "error", err)
 		if retries >= maxRetries {
 			archivedTasks.Add(1)
+			telemetry.RecordArchivedTask(queue, task.Type())
+			sentry.WithScope(func(scope *sentry.Scope) {
+				scope.SetTag("asynq.queue", queue)
+				scope.SetTag("asynq.task_type", task.Type())
+				sentry.CaptureException(err)
+			})
 			logger.ErrorContext(ctx, "background task archived", "queue", queue, "task_id", id, "task_type", task.Type(), "retry_count", retries, "error", err)
 		}
 	})

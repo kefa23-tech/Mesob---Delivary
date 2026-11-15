@@ -7,7 +7,9 @@ RUN npm ci
 FROM node:22-alpine AS build
 WORKDIR /app
 ARG NEXT_PUBLIC_API_URL=https://localhost/api/v1
+ARG NEXT_PUBLIC_SENTRY_DSN=
 ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_SENTRY_DSN=$NEXT_PUBLIC_SENTRY_DSN
 COPY --from=deps /app/node_modules ./node_modules
 COPY api /api
 COPY frontend-admin ./

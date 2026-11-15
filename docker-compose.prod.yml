@@ -28,6 +28,42 @@ services:
       retries: 10
     networks: [backend]
 
+  redis-exporter:
+    image: oliver006/redis_exporter:v1.80.1
+    restart: unless-stopped
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    depends_on:
+      redis: { condition: service_healthy }
+    networks: [backend]
+
+  prometheus:
+    image: prom/prometheus:v3.8.0
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus", "--storage.tsdb.retention.time=15d"]
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/mesob-alerts.yml:/etc/prometheus/mesob-alerts.yml:ro
+      - prometheus_data:/prometheus
+    depends_on: [api, redis-exporter]
+    networks: [backend]
+
+  grafana:
+    image: grafana/grafana:12.3.0
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./deploy/monitoring/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/mesob-production.json:/var/lib/grafana/dashboards/mesob-production.json:ro
+    depends_on: [prometheus]
+    networks: [backend]
+
   api:
     build:
       context: .
@@ -48,6 +84,8 @@ services:
       TELEBIRR_API_URL: ${TELEBIRR_API_URL:-}
       TELEBIRR_API_KEY: ${TELEBIRR_API_KEY:-}
       TELEBIRR_WEBHOOK_SECRET: ${TELEBIRR_WEBHOOK_SECRET:-}
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
       SMS_GATEWAY_URL: ${SMS_GATEWAY_URL:-}
       WHATSAPP_GATEWAY_URL: ${WHATSAPP_GATEWAY_URL:-}
     depends_on:
@@ -89,10 +127,15 @@ services:
       dockerfile: frontend-app/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://${MESOB_DOMAIN:?set MESOB_DOMAIN}/api/v1
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
     depends_on: [api]
     networks: [backend]
 
@@ -102,10 +145,15 @@ services:
       dockerfile: frontend-admin/Dockerfile
       args:
         NEXT_PUBLIC_API_URL: https://${ADMIN_DOMAIN:?set ADMIN_DOMAIN}/api/v1
+        NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
     restart: unless-stopped
     environment:
       NODE_ENV: production
       NEXT_TELEMETRY_DISABLED: "1"
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_ENVIRONMENT: ${SENTRY_ENVIRONMENT:-production}
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}
     depends_on: [api]
     networks: [backend]
 
@@ -133,6 +181,8 @@ volumes:
   redis_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  grafana_data:
 
 networks:
   backend:

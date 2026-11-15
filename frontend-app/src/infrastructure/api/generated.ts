@@ -4,6 +4,22 @@
  */
 
 export interface paths {
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getHealth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/otp/request": {
         parameters: {
             query?: never;
@@ -893,9 +909,8 @@ export interface components {
             eco_packaging_certified?: boolean;
         };
         RestaurantPage: {
-            data: components["schemas"]["Restaurant"][];
-            page?: number;
-            total?: number;
+            restaurants: components["schemas"]["Restaurant"][];
+            next_cursor?: string;
         };
         Menu: {
             /** Format: uuid */
@@ -1436,6 +1451,36 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    getHealth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description API process is healthy */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        request_id: string;
+                        data: {
+                            /** @example ok */
+                            status: string;
+                            /** @example mesob-api */
+                            service: string;
+                            /** Format: date-time */
+                            timestamp: string;
+                        };
+                    };
+                };
+            };
+        };
+    };
     requestOtp: {
         parameters: {
             query?: never;

@@ -12,6 +12,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mesob-delivery/backend/internal/orders/domain"
 	"github.com/mesob-delivery/backend/internal/orders/usecase"
+	"github.com/mesob-delivery/backend/internal/telemetry"
 )
 
 type TrackingHandler struct {
@@ -66,6 +67,8 @@ func (h *TrackingHandler) snapshot(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s)
 }
 func (h *TrackingHandler) stream(w http.ResponseWriter, r *http.Request) {
+	releaseMetric := telemetry.TrackSSEConnection()
+	defer releaseMetric()
 	userID := h.userID(r)
 	if userID == "" {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": "authentication required"})

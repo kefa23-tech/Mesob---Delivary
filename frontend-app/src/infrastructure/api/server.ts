@@ -8,7 +8,7 @@ const apiURL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8080/api/v1'
 
 export async function getRestaurants(params: URLSearchParams): Promise<RestaurantPage> {
   const response = await fetch(`${apiURL}/restaurants?${params.toString()}`, { next: { revalidate: 30 } });
-  if (!response.ok) return { data: [] };
+  if (!response.ok) return { restaurants: [] };
   return response.json() as Promise<RestaurantPage>;
 }
 

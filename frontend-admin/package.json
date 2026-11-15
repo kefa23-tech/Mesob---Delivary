@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@mesob/api-contract": "file:../api",
+    "@sentry/nextjs": "^11.12.0",
     "@tanstack/react-query": "^5.107.1",
     "next": "15.5.29",
     "next-intl": "4.3.4",

@@ -1,6 +1,6 @@
 {$MESOB_DOMAIN} {
 	encode zstd gzip br
-	@api path /api/* /metrics
+	@api path /api/*
 	handle @api {
 		reverse_proxy api:8080 {
 			header_up X-Real-IP {remote_host}
@@ -15,7 +15,7 @@
 
 {$ADMIN_DOMAIN} {
 	encode zstd gzip br
-	@api path /api/* /metrics
+	@api path /api/*
 	handle @api {
 		reverse_proxy api:8080 {
 			header_up X-Real-IP {remote_host}

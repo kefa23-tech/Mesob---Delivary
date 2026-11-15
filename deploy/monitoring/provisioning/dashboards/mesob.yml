@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: Mesob Production
+    orgId: 1
+    folder: Mesob
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards
