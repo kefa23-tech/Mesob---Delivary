@@ -69,6 +69,50 @@ func AccountKey(kind AccountType, ownerID string) string {
 	return string(kind) + ":" + ownerID
 }
 
+// RemittanceBalance applies a positive cash payment against courier exposure.
+func RemittanceBalance(balance, amount int64) (int64, error) {
+	if amount <= 0 {
+		return balance, ErrInvalidEntry
+	}
+	if amount > balance {
+		return balance, ErrInsufficientCash
+	}
+	return balance - amount, nil
+}
+
+// RefundEntry builds a balanced reversal against credit destinations from the original payment.
+// Source credits are supplied as negative signed lines and reversed in order until the refund is covered.
+func RefundEntry(sourceKey, orderID, currency, description string, amount int64, sourceCredits []Line) (Entry, error) {
+	if amount <= 0 {
+		return Entry{}, ErrInvalidEntry
+	}
+	left := amount
+	lines := []Line{}
+	for _, source := range sourceCredits {
+		if source.AmountMinor >= 0 || source.AccountType == CustomerClearing {
+			continue
+		}
+		credit := -source.AmountMinor
+		if credit > left {
+			credit = left
+		}
+		if credit > 0 {
+			source.AmountMinor = credit
+			lines = append(lines, source)
+			left -= credit
+		}
+		if left == 0 {
+			break
+		}
+	}
+	if left > 0 {
+		lines = append(lines, Line{AccountKey: AccountKey(PlatformRevenue, ""), AccountType: PlatformRevenue, AmountMinor: left})
+	}
+	lines = append(lines, Line{AccountKey: AccountKey(CustomerClearing, ""), AccountType: CustomerClearing, AmountMinor: -amount})
+	e := Entry{SourceKey: sourceKey, OrderID: orderID, EntryType: "admin_refund", Currency: currency, Description: description, Lines: lines}
+	return e, e.Validate()
+}
+
 func OnlinePaymentEntry(orderID, provider, reference, restaurantID string, total, subtotal, commission, delivery int64) Entry {
 	entry := Entry{
 		SourceKey: "payment:" + strings.ToLower(provider) + ":" + reference + ":confirmed",

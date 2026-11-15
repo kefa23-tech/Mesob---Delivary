@@ -102,6 +102,11 @@ type KitchenOrder struct {
 	CustomerPhone   string `json:"customer_phone"`
 	PrepMinutes     *int   `json:"prep_minutes,omitempty"`
 	RejectionReason string `json:"rejection_reason,omitempty"`
+	CourierID       string `json:"courier_id,omitempty"`
+	CourierName     string `json:"courier_name,omitempty"`
+	CourierPhone    string `json:"courier_phone,omitempty"`
+	CourierVehicle  string `json:"courier_vehicle,omitempty"`
+	PickupCode      string `json:"pickup_code,omitempty"`
 }
 
 type RestaurantRejectionReason string

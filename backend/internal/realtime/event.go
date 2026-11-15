@@ -8,10 +8,11 @@ import (
 type EventType string
 
 const (
-	OrderCreated          EventType = "ORDER_CREATED"
-	OrderStatusUpdated    EventType = "ORDER_STATUS_UPDATED"
-	CourierLocationUpdate EventType = "COURIER_LOCATION_UPDATED"
-	CourierOfferCreated   EventType = "COURIER_OFFER_CREATED"
+	OrderCreated               EventType = "ORDER_CREATED"
+	OrderStatusUpdated         EventType = "ORDER_STATUS_UPDATED"
+	CourierLocationUpdate      EventType = "COURIER_LOCATION_UPDATED"
+	CourierOfferCreated        EventType = "COURIER_OFFER_CREATED"
+	CourierAvailabilityUpdated EventType = "COURIER_AVAILABILITY_UPDATED"
 )
 
 type CourierLocation struct {
@@ -40,6 +41,8 @@ type Publisher interface {
 
 type Subscription interface {
 	SubscribeOrder(context.Context, string) (<-chan Event, error)
+	SubscribeRestaurant(context.Context, string) (<-chan Event, error)
+	SubscribeCourier(context.Context, string) (<-chan Event, error)
 }
 
 type Hub interface {

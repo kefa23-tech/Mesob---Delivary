@@ -29,6 +29,8 @@ type trackingHubFake struct{ events chan realtime.Event }
 func (h trackingHubFake) SubscribeOrder(context.Context, string) (<-chan realtime.Event, error) {
 	return h.events, nil
 }
+func(h trackingHubFake)SubscribeRestaurant(context.Context,string)(<-chan realtime.Event,error){return h.events,nil}
+func(h trackingHubFake)SubscribeCourier(context.Context,string)(<-chan realtime.Event,error){return h.events,nil}
 func signedCustomer(t *testing.T, user string) string {
 	t.Helper()
 	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{"sub": user, "role": "customer", "exp": time.Now().Add(time.Minute).Unix()}).SignedString([]byte(testJWTSecret))

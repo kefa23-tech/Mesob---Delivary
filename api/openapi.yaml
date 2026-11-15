@@ -203,6 +203,13 @@ paths:
       responses:
         '200': { description: Active restaurant kitchen orders, content: { application/json: { schema: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/KitchenOrder' } } } } } } }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /dashboard/restaurant/stream:
+    get:
+      tags: [Partner]
+      operationId: streamRestaurantKitchenEvents
+      security: [{ bearerAuth: [] }]
+      description: Authenticated SSE snapshot followed by live restaurant order events.
+      responses: { '200': { description: Active orders and typed live events, content: { text/event-stream: { schema: { type: string } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
   /dashboard/restaurant/orders/{id}/accept:
     post:
       tags: [Partner]
@@ -237,7 +244,15 @@ paths:
     get:
       tags: [Courier]
       operationId: getCourierDashboard
-      responses: { '200': { description: Courier dashboard, content: { application/json: { schema: { $ref: '#/components/schemas/CourierDashboard' } } } } }
+      security: [{ bearerAuth: [] }]
+      responses: { '200': { description: Courier dashboard and active delivery, content: { application/json: { schema: { $ref: '#/components/schemas/CourierDashboard' } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /courier/events/stream:
+    get:
+      tags: [Courier]
+      operationId: streamCourierEvents
+      security: [{ bearerAuth: [] }]
+      description: Authenticated SSE snapshot followed by courier availability, offer, delivery, and GPS events.
+      responses: { '200': { description: Courier snapshot and live events, content: { text/event-stream: { schema: { type: string } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
   /courier/status:
     post:
       tags: [Courier]
@@ -261,6 +276,12 @@ paths:
       operationId: streamCourierOffers
       description: Server-sent events; each offer is emitted as an `offer` event with a CourierOffer JSON payload.
       responses: { '200': { description: Live courier offer events, content: { text/event-stream: { schema: { type: string } } } }, '401': { $ref: '#/components/responses/Unauthorized' } }
+  /courier/offers/{order_id}:
+    get:
+      tags: [Courier]
+      operationId: getCourierOfferDetails
+      parameters: [{ name: order_id, in: path, required: true, schema: { type: string, format: uuid } }]
+      responses: { '200': { description: Offer details for the assigned courier, content: { application/json: { schema: { $ref: '#/components/schemas/CourierOfferDetails' } } } }, '401': { $ref: '#/components/responses/Unauthorized' }, '410': { description: Offer expired or unavailable } }
   /courier/offers/{order_id}/accept:
     post:
       tags: [Courier]
@@ -285,6 +306,67 @@ paths:
       tags: [Admin]
       operationId: adminListUsers
       responses: { '200': { description: User list, content: { application/json: { schema: { $ref: '#/components/schemas/UserPage' } } } } }
+  /admin/overview:
+    get:
+      tags: [Admin]
+      operationId: adminOperationsOverview
+      responses: { '200': { description: Daily GMV and current order and dispatch counts, content: { application/json: { schema: { $ref: '#/components/schemas/AdminOverview' } } } }, '403': { description: Active administrator role required } }
+  /admin/kyc/pending:
+    get:
+      tags: [Admin]
+      operationId: adminPendingKYC
+      responses: { '200': { description: Pending restaurant and courier verification, content: { application/json: { schema: { $ref: '#/components/schemas/AdminKYCQueue' } } } }, '401': { $ref: '#/components/responses/Unauthorized' }, '403': { description: Active administrator role required } }
+  /admin/kyc/{entity_type}/{id}/review:
+    post:
+      tags: [Admin]
+      operationId: adminReviewKYC
+      parameters:
+        - { name: entity_type, in: path, required: true, schema: { type: string, enum: [restaurant, courier] } }
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminKYCReviewRequest' } } } }
+      responses: { '200': { description: KYC review recorded }, '400': { $ref: '#/components/responses/BadRequest' }, '401': { $ref: '#/components/responses/Unauthorized' }, '403': { description: Active administrator role required }, '404': { $ref: '#/components/responses/NotFound' } }
+  /admin/orders/stuck:
+    get:
+      tags: [Admin]
+      operationId: adminListStuckOrders
+      parameters: [{ name: sla_minutes, in: query, schema: { type: integer, minimum: 1, maximum: 1440, default: 20 } }]
+      responses: { '200': { description: Orders beyond dispatch SLA or marked for manual intervention, content: { application/json: { schema: { $ref: '#/components/schemas/AdminStuckOrderPage' } } } }, '403': { description: Active administrator role required } }
+  /admin/orders/{id}/manual-assign:
+    post:
+      tags: [Admin]
+      operationId: adminManuallyAssignCourier
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminManualAssignRequest' } } } }
+      responses: { '200': { description: Courier assigned to an eligible order }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { description: Active administrator role required }, '404': { $ref: '#/components/responses/NotFound' }, '409': { description: Order or courier is no longer eligible } }
+  /admin/orders/{id}/resolve-dispute:
+    post:
+      tags: [Admin]
+      operationId: adminResolveOrderDispute
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminResolveDisputeRequest' } } } }
+      responses: { '200': { description: Resolution, balanced ledger reversal, inventory restoration when cancelled }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { description: Active administrator role required }, '404': { $ref: '#/components/responses/NotFound' }, '409': { description: Order cannot be changed in its current state } }
+  /admin/ledger/summary:
+    get:
+      tags: [Admin]
+      operationId: adminLedgerSummary
+      responses: { '200': { description: System balances and global signed-line invariant, content: { application/json: { schema: { $ref: '#/components/schemas/AdminLedgerSummary' } } } }, '403': { description: Active administrator role required } }
+  /admin/ledger/entries:
+    get:
+      tags: [Admin]
+      operationId: adminLedgerEntries
+      parameters:
+        - { name: page, in: query, schema: { type: integer, minimum: 1, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 25 } }
+        - { name: account_type, in: query, schema: { type: string } }
+        - { name: q, in: query, schema: { type: string } }
+      responses: { '200': { description: Filterable ledger entries and journal lines, content: { application/json: { schema: { $ref: '#/components/schemas/AdminLedgerPage' } } } }, '403': { description: Active administrator role required } }
+  /admin/couriers/{id}/settle-cod:
+    post:
+      tags: [Admin]
+      operationId: adminSettleCourierCOD
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, format: uuid } }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: '#/components/schemas/AdminCODSettlementRequest' } } } }
+      responses: { '200': { description: Remittance recorded and courier exposure reduced }, '400': { $ref: '#/components/responses/BadRequest' }, '403': { description: Active administrator role required }, '409': { description: Remittance exceeds outstanding courier cash } }
   /admin/disputes:
     get:
       tags: [Admin]
@@ -360,18 +442,33 @@ components:
     PaymentInitialization: { type: object, required: [order_id, provider, reference, checkout_url], properties: { order_id: { type: string, format: uuid }, provider: { type: string, enum: [CHAPA, TELEBIRR] }, reference: { type: string }, checkout_url: { type: string, format: uri } } }
     OrderPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Order' } }, page: { type: integer }, total: { type: integer } } }
     OrderTrackingSnapshot: { type: object, required: [id, status, payment_status, restaurant_id, restaurant_name, restaurant_lat, restaurant_lng, delivery_lat, delivery_lng, delivery_address], properties: { id: { type: string, format: uuid }, status: { type: string }, payment_status: { type: string }, restaurant_status: { type: string }, restaurant_id: { type: string, format: uuid }, restaurant_name: { type: string }, restaurant_lat: { type: number }, restaurant_lng: { type: number }, delivery_lat: { type: number }, delivery_lng: { type: number }, delivery_address: { type: string }, courier_id: { type: string, format: uuid }, courier_name: { type: string }, courier_phone: { type: string }, courier_vehicle: { type: string, enum: [bicycle, motorbike, car] }, courier_lat: { type: number }, courier_lng: { type: number }, courier_heading: { type: number }, eta_at: { type: string, format: date-time } } }
-    OrderRealtimeEvent: { type: object, required: [id, type, occurred_at], properties: { id: { type: string }, type: { type: string, enum: [ORDER_CREATED, ORDER_STATUS_UPDATED, COURIER_LOCATION_UPDATED, COURIER_OFFER_CREATED] }, order_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, courier_id: { type: string, format: uuid }, status: { type: string }, occurred_at: { type: string, format: date-time }, location: { type: object, properties: { lat: { type: number }, lng: { type: number }, heading: { type: number }, eta_seconds: { type: integer }, eta_at: { type: string, format: date-time } } }, data: { type: object, additionalProperties: true } } }
+    OrderRealtimeEvent: { type: object, required: [id, type, occurred_at], properties: { id: { type: string }, type: { type: string, enum: [ORDER_CREATED, ORDER_STATUS_UPDATED, COURIER_LOCATION_UPDATED, COURIER_OFFER_CREATED, COURIER_AVAILABILITY_UPDATED] }, order_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, courier_id: { type: string, format: uuid }, status: { type: string }, occurred_at: { type: string, format: date-time }, location: { type: object, properties: { lat: { type: number }, lng: { type: number }, heading: { type: number }, eta_seconds: { type: integer }, eta_at: { type: string, format: date-time } } }, data: { type: object, additionalProperties: true } } }
     RestaurantDashboard: { type: object, properties: { restaurant: { $ref: '#/components/schemas/Restaurant' }, pending_orders: { type: integer }, revenue_minor: { type: integer, format: int64 } } }
     AcceptRestaurantOrderRequest: { type: object, required: [prep_minutes], properties: { prep_minutes: { type: integer, minimum: 1, maximum: 240 } } }
     RejectRestaurantOrderRequest: { type: object, required: [reason], properties: { reason: { type: string, enum: [OUT_OF_STOCK, TOO_BUSY, RESTAURANT_CLOSED, OTHER] } } }
-    KitchenOrder: { allOf: [{ $ref: '#/components/schemas/Order' }, { type: object, properties: { customer_name: { type: string }, customer_phone: { type: string }, prep_minutes: { type: integer }, rejection_reason: { type: string } } }] }
-    CourierDashboard: { type: object, properties: { active_deliveries: { type: integer }, cash_balance_minor: { type: integer, format: int64 }, available: { type: boolean } } }
+    KitchenOrder: { allOf: [{ $ref: '#/components/schemas/Order' }, { type: object, properties: { customer_name: { type: string }, customer_phone: { type: string }, prep_minutes: { type: integer }, rejection_reason: { type: string }, courier_id: { type: string, format: uuid }, courier_name: { type: string }, courier_phone: { type: string }, courier_vehicle: { type: string }, pickup_code: { type: string, pattern: '^\\d{6}$' } } }] }
+    CourierDeliveryDetails: { type: object, required: [order_id, status, payment_method, restaurant_name, restaurant_lat, restaurant_lng, delivery_address, delivery_lat, delivery_lng, customer_name, customer_phone, total_minor, delivery_fee_minor], properties: { order_id: { type: string, format: uuid }, status: { type: string }, payment_method: { type: string }, restaurant_name: { type: string }, restaurant_lat: { type: number }, restaurant_lng: { type: number }, delivery_address: { type: string }, delivery_lat: { type: number }, delivery_lng: { type: number }, customer_name: { type: string }, customer_phone: { type: string }, total_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 } } }
+    CourierOfferDetails: { allOf: [{ $ref: '#/components/schemas/CourierDeliveryDetails' }, { type: object, properties: { distance_km: { type: number }, expires_in_seconds: { type: integer } } }] }
+    CourierDashboard: { type: object, required: [online, vehicle_type, cash_balance_minor, reserved_cash_minor, cash_limit_minor], properties: { online: { type: boolean }, vehicle_type: { type: string, enum: [bicycle, motorbike, car] }, cash_balance_minor: { type: integer, format: int64 }, reserved_cash_minor: { type: integer, format: int64 }, cash_limit_minor: { type: integer, format: int64 }, active_delivery: { $ref: '#/components/schemas/CourierDeliveryDetails' } } }
     CourierStatusRequest: { type: object, required: [online, vehicle_type], properties: { online: { type: boolean }, vehicle_type: { type: string, enum: [bicycle, motorbike, car] } } }
     CourierLocationRequest: { type: object, required: [lat, lng], properties: { lat: { type: number, format: double, minimum: -90, maximum: 90 }, lng: { type: number, format: double, minimum: -180, maximum: 180 }, heading: { type: number, format: double, minimum: 0, maximum: 360 } } }
     CourierOffer: { type: object, required: [order_id, courier_id, distance_km, expires_in_seconds], properties: { order_id: { type: string, format: uuid }, courier_id: { type: string, format: uuid }, distance_km: { type: number }, expires_in_seconds: { type: integer } } }
     CourierOffersResponse: { type: object, required: [data], properties: { data: { type: array, items: { type: string, format: uuid } } } }
     CompleteDeliveryRequest: { type: object, required: [pin], properties: { pin: { type: string, pattern: '^\\d{4}$' } } }
     UserPage: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/User' } }, total: { type: integer } } }
+    AdminKYCReviewRequest: { type: object, required: [decision, notes], properties: { decision: { type: string, enum: [approved, rejected] }, notes: { type: string, minLength: 1 } } }
+    AdminKYCQueue: { type: object, required: [restaurants, couriers], properties: { restaurants: { type: array, items: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string }, owner_name: { type: string }, tin: { type: string }, business_license_url: { type: string }, status: { type: string }, created_at: { type: string, format: date-time } } } }, couriers: { type: array, items: { type: object, properties: { id: { type: string, format: uuid }, name: { type: string }, phone: { type: string }, national_id: { type: string }, driver_license_url: { type: string }, vehicle_info: { type: object, additionalProperties: true }, status: { type: string }, created_at: { type: string, format: date-time } } } } } }
+    AdminEligibleCourier: { type: object, required: [id, name, vehicle_type], properties: { id: { type: string, format: uuid }, name: { type: string }, vehicle_type: { type: string } } }
+    AdminStuckOrder: { type: object, required: [id, status, payment_method, total_minor, minutes_stuck], properties: { id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, restaurant_name: { type: string }, customer_name: { type: string }, status: { type: string }, payment_method: { type: string }, total_minor: { type: integer, format: int64 }, placed_at: { type: string, format: date-time }, minutes_stuck: { type: integer }, manual_intervention: { type: boolean }, eligible_couriers: { type: array, items: { $ref: '#/components/schemas/AdminEligibleCourier' } } } }
+    AdminStuckOrderPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/AdminStuckOrder' } } } }
+    AdminManualAssignRequest: { type: object, required: [courier_id], properties: { courier_id: { type: string, format: uuid } } }
+    AdminResolveDisputeRequest: { type: object, required: [resolution, notes], properties: { resolution: { type: string, enum: [full_refund, partial_credit, cancellation] }, refund_minor: { type: integer, format: int64, minimum: 0 }, notes: { type: string, minLength: 1 } } }
+    AdminLedgerSummary: { type: object, required: [accounts, total_minor, balanced], properties: { accounts: { type: object, additionalProperties: { type: integer, format: int64 } }, total_minor: { type: integer, format: int64 }, balanced: { type: boolean } } }
+    AdminLedgerLine: { type: object, required: [account_key, account_type, amount_minor], properties: { account_key: { type: string }, account_type: { type: string }, amount_minor: { type: integer, format: int64 } } }
+    AdminLedgerEntry: { type: object, required: [id, source_key, entry_type, currency, description, created_at, lines], properties: { id: { type: string, format: uuid }, source_key: { type: string }, order_id: { type: string, format: uuid }, entry_type: { type: string }, currency: { type: string }, description: { type: string }, created_at: { type: string, format: date-time }, lines: { type: array, items: { $ref: '#/components/schemas/AdminLedgerLine' } } } }
+    AdminLedgerPage: { type: object, required: [data, page, limit, total], properties: { data: { type: array, items: { $ref: '#/components/schemas/AdminLedgerEntry' } }, page: { type: integer }, limit: { type: integer }, total: { type: integer } } }
+    AdminCODSettlementRequest: { type: object, required: [reference, amount_minor], properties: { reference: { type: string, minLength: 1 }, amount_minor: { type: integer, format: int64, minimum: 1 } } }
+    AdminOverview: { type: object, required: [daily_gmv_minor, active_orders, stuck_orders], properties: { daily_gmv_minor: { type: integer, format: int64 }, active_orders: { type: integer, format: int64 }, stuck_orders: { type: integer } } }
     Dispute: { type: object, required: [id, status], properties: { id: { type: string, format: uuid }, order_id: { type: string, format: uuid }, status: { type: string }, resolution: { type: string } } }
     ResolveDisputeRequest: { type: object, required: [resolution], properties: { resolution: { type: string }, refund_minor: { type: integer, format: int64, minimum: 0 } } }
     DeadLetterJob: { type: object, required: [id, job_type, status], properties: { id: { type: string, format: uuid }, job_type: { type: string }, status: { type: string }, error_message: { type: string }, attempts: { type: integer }, created_at: { type: string, format: date-time } } }

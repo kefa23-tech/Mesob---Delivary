@@ -2,3 +2,5 @@
 @tailwind components;
 @tailwind utilities;
 body { background: #f8fafc; }
+.field { display: block; width: 100%; margin-top: .5rem; border: 1px solid #e2e8f0; border-radius: .75rem; padding: .75rem 1rem; outline: none; }
+.field:focus { border-color: #047857; box-shadow: 0 0 0 3px rgb(16 185 129 / .12); }

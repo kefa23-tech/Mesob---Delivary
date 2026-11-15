@@ -29,6 +29,10 @@ type Repository interface {
 type ActiveDeliveryReader interface {
 	ActiveDelivery(context.Context, domain.CourierID) (string, string, float64, float64, error)
 }
+type CourierConsoleReader interface {
+	CourierDashboard(context.Context, domain.CourierID) (domain.CourierDashboard, error)
+	OfferDetails(context.Context, domain.OrderID) (domain.DeliveryDetails, error)
+}
 
 type PresenceRegistry interface {
 	UpdateStatus(context.Context, domain.CourierStatus) error

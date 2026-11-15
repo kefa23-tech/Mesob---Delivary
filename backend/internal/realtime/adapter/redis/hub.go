@@ -69,10 +69,21 @@ func (h *Hub) Publish(ctx context.Context, event realtime.Event) error {
 }
 
 func (h *Hub) SubscribeOrder(ctx context.Context, orderID string) (<-chan realtime.Event, error) {
-	if orderID == "" {
-		return nil, errors.New("order id is required")
+	return h.subscribe(ctx, realtime.OrderChannel(orderID), orderID)
+}
+
+func (h *Hub) SubscribeRestaurant(ctx context.Context, restaurantID string) (<-chan realtime.Event, error) {
+	return h.subscribe(ctx, realtime.RestaurantChannel(restaurantID), restaurantID)
+}
+func (h *Hub) SubscribeCourier(ctx context.Context, courierID string) (<-chan realtime.Event, error) {
+	return h.subscribe(ctx, realtime.CourierChannel(courierID), courierID)
+}
+
+func (h *Hub) subscribe(ctx context.Context, channel, id string) (<-chan realtime.Event, error) {
+	if id == "" {
+		return nil, errors.New("subscription id is required")
 	}
-	pubsub := h.client.Subscribe(ctx, realtime.OrderChannel(orderID))
+	pubsub := h.client.Subscribe(ctx, channel)
 	if _, err := pubsub.Receive(ctx); err != nil {
 		_ = pubsub.Close()
 		return nil, fmt.Errorf("subscribe to order events: %w", err)

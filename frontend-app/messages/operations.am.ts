@@ -1,0 +1,12 @@
+const operations = {
+  kitchen: {
+    eyebrow: 'MESOB · የወጥ ቤት ሰሌዳ', title: 'የወጥ ቤት ሥራዎች', live: 'ቀጥታ ዝማኔ', reconnecting: 'እንደገና በመገናኘት ላይ', newOrders: 'አዲስ ትዕዛዞች', preparing: 'በዝግጅት ላይ', ready: 'ለማንሳት ዝግጁ', empty: 'አሁን ምንም ትዕዛዝ የለም',
+    order: 'ትዕዛዝ', customer: 'ደንበኛ', payment: 'ክፍያ', paid: 'ተከፍሏል', cod: 'በር ላይ በጥሬ ገንዘብ', sla: 'በዚህ ጊዜ ውስጥ ይቀበሉ', expired: 'የመቀበያ ጊዜ አልፏል', prepTime: 'የዝግጅት ጊዜ', minutes: 'ደቂቃ', accept: 'ትዕዛዝ ተቀበል', reject: 'ትዕዛዝ አትቀበል', reason: 'የመከልከያ ምክንያት', chooseReason: 'ምክንያት ይምረጡ', stock: 'እቃ የለም', busy: 'ሥራ በዝቷል', closed: 'ምግብ ቤቱ ዝግ ነው', other: 'ሌላ', start: 'ዝግጅት ጀምር', prepRemaining: 'የቀረ የዝግጅት ጊዜ', markReady: 'ለአሽከርካሪ ዝግጁ አድርግ', courier: 'አሽከርካሪ', vehicle: 'ተሽከርካሪ', pickupCode: 'የማንሳት ማረጋገጫ ኮድ', handoff: 'የማስረከቢያ ሁኔታ', waitingCourier: 'አሽከርካሪ በመጠበቅ ላይ', assigned: 'አሽከርካሪ ተመድቧል · ሲያስረክቡ ኮዱን ያረጋግጡ', enableSound: 'የአዲስ ትዕዛዝ ድምፅ አንቃ', soundEnabled: 'የድምፅ ማስጠንቀቂያ በርቷል', soundBlocked: 'የድምፅ ማስጠንቀቂያ ለማንቃት ይንኩ', failed: 'ይህን ትዕዛዝ ማዘመን አልተቻለም', noRestaurant: 'ከዚህ መለያ ጋር የተገናኘ ምግብ ቤት የለም።', items: 'ዕቃዎች', option: 'ምርጫዎች', readyLabel: 'ዝግጁ',
+  },
+  courier: {
+    availability: 'የመገኘት ሁኔታ', reserved: 'የተያዘ COD',
+    eyebrow: 'MESOB · የአሽከርካሪ መቆጣጠሪያ', title: 'የማድረሻ ሥራ', online: 'በመስመር ላይ', offline: 'ከመስመር ውጭ', goOnline: 'በመስመር ላይ ግባ', goOffline: 'ከመስመር ውጭ ውጣ', vehicle: 'ተሽከርካሪ', bicycle: 'ብስክሌት', motorbike: 'ሞተር ሳይክል', car: 'መኪና', codCash: 'የCOD ጥሬ ገንዘብ ኃላፊነት', cashCap: 'ገደብ', remaining: 'የቀረ አቅም', gps: 'GPS', gpsWaiting: 'የቦታ ፈቃድ በመጠበቅ ላይ', gpsDenied: 'ቦታ አልተገኘም። ለመስመር ላይ ሁኔታ GPS ይፍቀዱ።', live: 'ቀጥታ', reconnecting: 'እንደገና በመገናኘት ላይ', offer: 'አዲስ የማድረስ ጥሪ', pickup: 'ማንሻ', dropoff: 'መድረሻ', distance: 'የማንሻ ርቀት', earnings: 'የሚጠበቅ የማድረሻ ገቢ', expires: 'የጥሪው ጊዜ ይቀራል', seconds: 'ሰከንድ', accept: 'ማድረሻውን ተቀበል', decline: 'አሁን አይደለም', claimed: 'ሌላ አሽከርካሪ ትዕዛዙን ተቀብሏል።', offerExpired: 'የጥሪው ጊዜ አልፏል።', loadingOffer: 'የጥሪውን ዝርዝር በመጫን ላይ…', noOffer: 'የማድረስ ጥሪ በመጠበቅ ላይ', active: 'ንቁ ማድረሻ', navigateRestaurant: 'ወደ ምግብ ቤቱ ይሂዱ', confirmPickup: 'ምግቡን እንደተረከቡ ያረጋግጡ', navigateCustomer: 'ወደ ደንበኛው ይሂዱ', enterPin: 'ባለ 4 አሃዝ የደንበኛ PIN ያስገቡ', complete: 'ማድረሻውን ጨርስ', callCustomer: 'ለደንበኛው ደውል', openMaps: 'አቅጣጫ ክፈት', order: 'ትዕዛዝ', status: 'ሁኔታ', noActive: 'ንቁ ማድረሻ የለም። ጥሪ ለመቀበል በመስመር ላይ ይቆዩ።', pinInvalid: 'ከደንበኛው የተሰጠውን ባለ 4 አሃዝ PIN ያስገቡ።', actionFailed: 'ይህን ማጠናቀቅ አልተቻለም። እንደገና ይሞክሩ።', gpsSent: 'ቦታ ተልኳል', gpsError: 'የGPS ዝማኔ አልተሳካም', call: 'ደውል',
+  },
+} as const;
+
+export default operations;

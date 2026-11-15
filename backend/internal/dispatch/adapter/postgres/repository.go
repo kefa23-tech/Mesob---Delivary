@@ -130,7 +130,7 @@ func (r *Repository) ClaimCourier(ctx context.Context, orderID domain.OrderID, c
 		return err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	cmd, err := tx.Exec(ctx, `UPDATE orders SET courier_id=$2,status='COURIER_ASSIGNED',courier_assigned_at=now(),updated_at=now() WHERE id=$1 AND courier_id IS NULL AND restaurant_status IN ('ACCEPTED','PREPARING','READY_FOR_PICKUP') AND status IN ('ACCEPTED','PREPARING','READY_FOR_PICKUP') AND EXISTS(SELECT 1 FROM courier_presence cp JOIN users u ON u.id=cp.courier_id WHERE cp.courier_id=$2 AND cp.online AND u.role='courier' AND u.status='active')`, string(orderID), string(courierID))
+	cmd, err := tx.Exec(ctx, `UPDATE orders SET courier_id=$2,status='COURIER_ASSIGNED',courier_assigned_at=now(),pickup_code=COALESCE(pickup_code,lpad((floor(random()*1000000))::bigint::text,6,'0')),updated_at=now() WHERE id=$1 AND courier_id IS NULL AND restaurant_status IN ('ACCEPTED','PREPARING','READY_FOR_PICKUP') AND status IN ('ACCEPTED','PREPARING','READY_FOR_PICKUP') AND EXISTS(SELECT 1 FROM courier_presence cp JOIN users u ON u.id=cp.courier_id WHERE cp.courier_id=$2 AND cp.online AND u.role='courier' AND u.status='active')`, string(orderID), string(courierID))
 	if err != nil {
 		return assignmentError(err)
 	}
@@ -217,4 +217,33 @@ func (r *Repository) ActiveDelivery(ctx context.Context, id domain.CourierID) (s
 		return "", "", 0, 0, nil
 	}
 	return orderID, restaurantID, lat, lng, err
+}
+
+func (r *Repository) CourierDashboard(ctx context.Context, id domain.CourierID) (domain.CourierDashboard, error) {
+	var out domain.CourierDashboard
+	err := r.pool.QueryRow(ctx, `SELECT COALESCE(cp.online,false),COALESCE(cp.vehicle_type,'motorbike'),COALESCE(b.balance_minor,0),COALESCE(b.reserved_minor,0) FROM users u LEFT JOIN courier_presence cp ON cp.courier_id=u.id LEFT JOIN courier_cash_balances b ON b.courier_id=u.id WHERE u.id=$1 AND u.role='courier' AND u.status='active'`, string(id)).Scan(&out.Online, &out.Vehicle, &out.CashBalanceMinor, &out.ReservedCashMinor)
+	if err != nil {
+		return out, err
+	}
+	out.CashLimitMinor = 500000
+	delivery, err := scanDelivery(r.pool.QueryRow(ctx, `SELECT o.id::text,o.status,o.payment_method,r.name,r.lat,r.lng,a.line1,a.lat,a.lng,c.name,c.phone,o.total_minor,o.delivery_fee_minor FROM orders o JOIN restaurants r ON r.id=o.restaurant_id JOIN addresses a ON a.id=o.delivery_address_id JOIN users c ON c.id=o.user_id WHERE o.courier_id=$1 AND o.status IN ('COURIER_ASSIGNED','PICKED_UP') ORDER BY o.updated_at DESC LIMIT 1`, string(id)))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return out, nil
+	}
+	if err != nil {
+		return out, err
+	}
+	out.ActiveDelivery = &delivery
+	return out, nil
+}
+func (r *Repository) OfferDetails(ctx context.Context, id domain.OrderID) (domain.DeliveryDetails, error) {
+	return scanDelivery(r.pool.QueryRow(ctx, `SELECT o.id::text,o.status,o.payment_method,r.name,r.lat,r.lng,a.line1,a.lat,a.lng,c.name,c.phone,o.total_minor,o.delivery_fee_minor FROM orders o JOIN restaurants r ON r.id=o.restaurant_id JOIN addresses a ON a.id=o.delivery_address_id JOIN users c ON c.id=o.user_id WHERE o.id=$1`, string(id)))
+}
+
+type deliveryScanner interface{ Scan(...any) error }
+
+func scanDelivery(row deliveryScanner) (domain.DeliveryDetails, error) {
+	var d domain.DeliveryDetails
+	err := row.Scan(&d.OrderID, &d.Status, &d.PaymentMethod, &d.RestaurantName, &d.RestaurantLat, &d.RestaurantLng, &d.DeliveryAddress, &d.DeliveryLat, &d.DeliveryLng, &d.CustomerName, &d.CustomerPhone, &d.TotalMinor, &d.DeliveryFeeMinor)
+	return d, err
 }

@@ -18,6 +18,16 @@ type KitchenService struct {
 	publisher  realtime.Publisher
 }
 
+func (s *KitchenService) RestaurantID(ctx context.Context, ownerID string) (string, error) {
+	reader, ok := s.repository.(interface {
+		RestaurantIDForOwner(context.Context, string) (string, error)
+	})
+	if !ok {
+		return "", fmt.Errorf("restaurant identity lookup unavailable")
+	}
+	return reader.RestaurantIDForOwner(ctx, ownerID)
+}
+
 func NewKitchenService(repository KitchenRepository, scheduler RestaurantSLAScheduler, extras ...any) *KitchenService {
 	s := &KitchenService{repository: repository, scheduler: scheduler}
 	for _, extra := range extras {

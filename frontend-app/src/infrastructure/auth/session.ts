@@ -35,6 +35,12 @@ export async function authenticatedFetch(input: RequestInfo | URL, init: Request
   const headers = new Headers(init.headers);
   const token = getAccessToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (typeof window !== 'undefined') {
+    try {
+      const sessionUser = JSON.parse(window.localStorage.getItem(USER_KEY) ?? 'null') as { id?: string } | null;
+      if (sessionUser?.id) headers.set('X-User-ID', sessionUser.id);
+    } catch { /* Ignore stale local session data; the access token remains authoritative. */ }
+  }
   let response = await fetch(input, { ...init, headers, credentials: 'include' });
   if (response.status === 401 && typeof window !== 'undefined') {
     const refreshed = await refreshAccessToken();

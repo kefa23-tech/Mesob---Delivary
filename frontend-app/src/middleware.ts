@@ -5,7 +5,7 @@ const intl = createMiddleware({ locales: ['en', 'am'], defaultLocale: 'en', loca
 
 export default function middleware(request: NextRequest) {
   const locale = request.nextUrl.pathname.split('/')[1];
-  const protectedRoute = /^\/(en|am)\/(account|orders|checkout|group-cart)(\/|$)/.test(request.nextUrl.pathname);
+  const protectedRoute = /^\/(en|am)\/(account|orders|checkout|group-cart|partner\/kitchen|courier\/dashboard)(\/|$)/.test(request.nextUrl.pathname);
   if (protectedRoute && request.cookies.get('mesob_authenticated')?.value !== '1') {
     const login = new URL(`/${locale === 'am' ? 'am' : 'en'}/auth/login`, request.url);
     login.searchParams.set('next', request.nextUrl.pathname);

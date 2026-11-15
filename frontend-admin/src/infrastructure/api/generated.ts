@@ -325,6 +325,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/restaurant/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Authenticated SSE snapshot followed by live restaurant order events. */
+        get: operations["streamRestaurantKitchenEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/dashboard/restaurant/orders/{id}/accept": {
         parameters: {
             query?: never;
@@ -405,6 +422,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/courier/events/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Authenticated SSE snapshot followed by courier availability, offer, delivery, and GPS events. */
+        get: operations["streamCourierEvents"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courier/status": {
         parameters: {
             query?: never;
@@ -462,6 +496,22 @@ export interface paths {
         };
         /** @description Server-sent events; each offer is emitted as an `offer` event with a CourierOffer JSON payload. */
         get: operations["streamCourierOffers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courier/offers/{order_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getCourierOfferDetails"];
         put?: never;
         post?: never;
         delete?: never;
@@ -528,6 +578,150 @@ export interface paths {
         get: operations["adminListUsers"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminOperationsOverview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminPendingKYC"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/kyc/{entity_type}/{id}/review": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminReviewKYC"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/orders/stuck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListStuckOrders"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/orders/{id}/manual-assign": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminManuallyAssignCourier"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/orders/{id}/resolve-dispute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminResolveOrderDispute"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ledger/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminLedgerSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ledger/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminLedgerEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/couriers/{id}/settle-cod": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminSettleCourierCOD"];
         delete?: never;
         options?: never;
         head?: never;
@@ -867,7 +1061,7 @@ export interface components {
         OrderRealtimeEvent: {
             id: string;
             /** @enum {string} */
-            type: "ORDER_CREATED" | "ORDER_STATUS_UPDATED" | "COURIER_LOCATION_UPDATED" | "COURIER_OFFER_CREATED";
+            type: "ORDER_CREATED" | "ORDER_STATUS_UPDATED" | "COURIER_LOCATION_UPDATED" | "COURIER_OFFER_CREATED" | "COURIER_AVAILABILITY_UPDATED";
             /** Format: uuid */
             order_id?: string;
             /** Format: uuid */
@@ -907,12 +1101,46 @@ export interface components {
             customer_phone?: string;
             prep_minutes?: number;
             rejection_reason?: string;
+            /** Format: uuid */
+            courier_id?: string;
+            courier_name?: string;
+            courier_phone?: string;
+            courier_vehicle?: string;
+            pickup_code?: string;
+        };
+        CourierDeliveryDetails: {
+            /** Format: uuid */
+            order_id: string;
+            status: string;
+            payment_method: string;
+            restaurant_name: string;
+            restaurant_lat: number;
+            restaurant_lng: number;
+            delivery_address: string;
+            delivery_lat: number;
+            delivery_lng: number;
+            customer_name: string;
+            customer_phone: string;
+            /** Format: int64 */
+            total_minor: number;
+            /** Format: int64 */
+            delivery_fee_minor: number;
+        };
+        CourierOfferDetails: components["schemas"]["CourierDeliveryDetails"] & {
+            distance_km?: number;
+            expires_in_seconds?: number;
         };
         CourierDashboard: {
-            active_deliveries?: number;
+            online: boolean;
+            /** @enum {string} */
+            vehicle_type: "bicycle" | "motorbike" | "car";
             /** Format: int64 */
-            cash_balance_minor?: number;
-            available?: boolean;
+            cash_balance_minor: number;
+            /** Format: int64 */
+            reserved_cash_minor: number;
+            /** Format: int64 */
+            cash_limit_minor: number;
+            active_delivery?: components["schemas"]["CourierDeliveryDetails"];
         };
         CourierStatusRequest: {
             online: boolean;
@@ -944,6 +1172,120 @@ export interface components {
         UserPage: {
             data?: components["schemas"]["User"][];
             total?: number;
+        };
+        AdminKYCReviewRequest: {
+            /** @enum {string} */
+            decision: "approved" | "rejected";
+            notes: string;
+        };
+        AdminKYCQueue: {
+            restaurants: {
+                /** Format: uuid */
+                id?: string;
+                name?: string;
+                owner_name?: string;
+                tin?: string;
+                business_license_url?: string;
+                status?: string;
+                /** Format: date-time */
+                created_at?: string;
+            }[];
+            couriers: {
+                /** Format: uuid */
+                id?: string;
+                name?: string;
+                phone?: string;
+                national_id?: string;
+                driver_license_url?: string;
+                vehicle_info?: {
+                    [key: string]: unknown;
+                };
+                status?: string;
+                /** Format: date-time */
+                created_at?: string;
+            }[];
+        };
+        AdminEligibleCourier: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            vehicle_type: string;
+        };
+        AdminStuckOrder: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            restaurant_id?: string;
+            restaurant_name?: string;
+            customer_name?: string;
+            status: string;
+            payment_method: string;
+            /** Format: int64 */
+            total_minor: number;
+            /** Format: date-time */
+            placed_at?: string;
+            minutes_stuck: number;
+            manual_intervention?: boolean;
+            eligible_couriers?: components["schemas"]["AdminEligibleCourier"][];
+        };
+        AdminStuckOrderPage: {
+            data: components["schemas"]["AdminStuckOrder"][];
+        };
+        AdminManualAssignRequest: {
+            /** Format: uuid */
+            courier_id: string;
+        };
+        AdminResolveDisputeRequest: {
+            /** @enum {string} */
+            resolution: "full_refund" | "partial_credit" | "cancellation";
+            /** Format: int64 */
+            refund_minor?: number;
+            notes: string;
+        };
+        AdminLedgerSummary: {
+            accounts: {
+                [key: string]: number;
+            };
+            /** Format: int64 */
+            total_minor: number;
+            balanced: boolean;
+        };
+        AdminLedgerLine: {
+            account_key: string;
+            account_type: string;
+            /** Format: int64 */
+            amount_minor: number;
+        };
+        AdminLedgerEntry: {
+            /** Format: uuid */
+            id: string;
+            source_key: string;
+            /** Format: uuid */
+            order_id?: string;
+            entry_type: string;
+            currency: string;
+            description: string;
+            /** Format: date-time */
+            created_at: string;
+            lines: components["schemas"]["AdminLedgerLine"][];
+        };
+        AdminLedgerPage: {
+            data: components["schemas"]["AdminLedgerEntry"][];
+            page: number;
+            limit: number;
+            total: number;
+        };
+        AdminCODSettlementRequest: {
+            reference: string;
+            /** Format: int64 */
+            amount_minor: number;
+        };
+        AdminOverview: {
+            /** Format: int64 */
+            daily_gmv_minor: number;
+            /** Format: int64 */
+            active_orders: number;
+            stuck_orders: number;
         };
         Dispute: {
             /** Format: uuid */
@@ -1622,6 +1964,27 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
         };
     };
+    streamRestaurantKitchenEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Active orders and typed live events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
     acceptRestaurantKitchenOrder: {
         parameters: {
             query?: never;
@@ -1754,7 +2117,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Courier dashboard */
+            /** @description Courier dashboard and active delivery */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -1763,6 +2126,28 @@ export interface operations {
                     "application/json": components["schemas"]["CourierDashboard"];
                 };
             };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    streamCourierEvents: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Courier snapshot and live events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
         };
     };
     updateCourierStatus: {
@@ -1865,6 +2250,36 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+        };
+    };
+    getCourierOfferDetails: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                order_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Offer details for the assigned courier */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CourierOfferDetails"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Offer expired or unavailable */
+            410: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
         };
     };
     acceptCourierOffer: {
@@ -1986,6 +2401,303 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["UserPage"];
                 };
+            };
+        };
+    };
+    adminOperationsOverview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Daily GMV and current order and dispatch counts */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminOverview"];
+                };
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminPendingKYC: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending restaurant and courier verification */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminKYCQueue"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminReviewKYC: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                entity_type: "restaurant" | "courier";
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminKYCReviewRequest"];
+            };
+        };
+        responses: {
+            /** @description KYC review recorded */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminListStuckOrders: {
+        parameters: {
+            query?: {
+                sla_minutes?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Orders beyond dispatch SLA or marked for manual intervention */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminStuckOrderPage"];
+                };
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminManuallyAssignCourier: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminManualAssignRequest"];
+            };
+        };
+        responses: {
+            /** @description Courier assigned to an eligible order */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Order or courier is no longer eligible */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminResolveOrderDispute: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminResolveDisputeRequest"];
+            };
+        };
+        responses: {
+            /** @description Resolution */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+            /** @description Order cannot be changed in its current state */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminLedgerSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description System balances and global signed-line invariant */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLedgerSummary"];
+                };
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminLedgerEntries: {
+        parameters: {
+            query?: {
+                page?: number;
+                limit?: number;
+                account_type?: string;
+                q?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Filterable ledger entries and journal lines */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLedgerPage"];
+                };
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminSettleCourierCOD: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCODSettlementRequest"];
+            };
+        };
+        responses: {
+            /** @description Remittance recorded and courier exposure reduced */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Remittance exceeds outstanding courier cash */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

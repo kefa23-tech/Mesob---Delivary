@@ -14,6 +14,9 @@ import (
 
 	paymentclients "github.com/mesob-delivery/backend/internal/adapter/payment"
 	"github.com/mesob-delivery/backend/internal/adapter/postgres"
+	adminhttp "github.com/mesob-delivery/backend/internal/admin/adapter/http"
+	adminpostgres "github.com/mesob-delivery/backend/internal/admin/adapter/postgres"
+	adminusecase "github.com/mesob-delivery/backend/internal/admin/usecase"
 	authhttp "github.com/mesob-delivery/backend/internal/auth/adapter/http"
 	"github.com/mesob-delivery/backend/internal/auth/adapter/otp"
 	authpostgres "github.com/mesob-delivery/backend/internal/auth/adapter/postgres"
@@ -140,18 +143,20 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	}
 	defer realtimeHub.Close()
 	dispatchService := dispatchusecase.NewService(dispatchpostgres.NewRepository(database), dispatchRegistry, dispatchQueue, dispatchRegistry, realtimeHub)
-	dispatchHandler := dispatchhttp.NewHandler(dispatchService)
+	dispatchHandler := dispatchhttp.NewHandler(dispatchService, realtimeHub)
 	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore, paymentQueue, realtimeHub)
 	trackingService := ordersusecase.NewTrackingService(orderRepository, realtimeHub, realtimeHub)
 	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService).WithTracking(ordershttp.NewTrackingHandler(trackingService, cfg.JWTSecret))
 	kitchenService := ordersusecase.NewKitchenService(orderRepository, paymentQueue, dispatchQueue, realtimeHub)
-	kitchenHandler := ordershttp.NewKitchenHandler(kitchenService)
+	kitchenHandler := ordershttp.NewKitchenHandler(kitchenService, realtimeHub)
 	paymentGateways := paymentclients.Registry{
 		paymentdomain.Chapa:    paymentclients.NewChapaClient(cfg.ChapaAPIURL, cfg.ChapaSecretKey, nil),
 		paymentdomain.Telebirr: paymentclients.NewTelebirrClient(cfg.TelebirrAPIURL, cfg.TelebirrAPIKey, nil),
 	}
 	ledgerRepository := ledgerpostgres.NewRepository(database)
 	ledgerService := ledgerusecase.NewService(ledgerRepository)
+	adminService := adminusecase.NewOperations(adminpostgres.NewRepository(database))
+	adminHandler := adminhttp.NewHandler(adminService, database)
 	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL, realtimeHub)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
 	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService)
@@ -198,9 +203,12 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())
 	router.Mount("/api/v1/group-carts", groupCartHandler.Routes())
 	router.Mount("/api/v1/orders", checkoutHandler.Routes())
-	router.Mount("/api/v1/dashboard/restaurant/orders", kitchenHandler.Routes())
-	router.Mount("/api/v1/courier", dispatchHandler.Routes())
+	identity := httpmiddleware.AccessTokenIdentity(cfg.JWTSecret)
+	router.Mount("/api/v1/dashboard/restaurant/orders", identity(kitchenHandler.Routes()))
+	router.Mount("/api/v1/dashboard/restaurant/stream", identity(kitchenHandler.StreamRoutes()))
+	router.Mount("/api/v1/courier", identity(dispatchHandler.Routes()))
 	router.Mount("/api/v1/payments", paymentHandler.Routes())
+	router.Mount("/api/v1/admin", identity(adminHandler.Routes()))
 
 	server := &http.Server{Addr: cfg.Address, Handler: router, ReadHeaderTimeout: 5 * time.Second}
 	ctx, stop := signal.NotifyContext(parent, os.Interrupt, syscall.SIGTERM)

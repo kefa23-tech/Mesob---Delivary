@@ -52,6 +52,12 @@ RETURNING id::text`, line.AccountKey, string(line.AccountType), line.OwnerUserID
 	return true, nil
 }
 
+// RecordWithinTransaction appends an entry using an existing PostgreSQL transaction.
+func RecordWithinTransaction(ctx context.Context, tx pgx.Tx, entry ledgerdomain.Entry) error {
+	_, err := recordTx(ctx, pgxTransaction{tx}, entry)
+	return err
+}
+
 type pgxTransaction struct{ pgx.Tx }
 
 func (t pgxTransaction) Exec(ctx context.Context, sql string, args ...any) error {
@@ -66,6 +72,11 @@ func (t pgxTransaction) QueryRow(ctx context.Context, sql string, args ...any) l
 // RecordCourierRemittance settles cash received from a courier and reduces
 // both their outstanding cash liability and the receivable ledger account.
 func (r *Repository) RecordCourierRemittance(ctx context.Context, courierID, reference string, amountMinor int64) error {
+	return r.RecordCourierRemittanceForAdmin(ctx, courierID, reference, amountMinor, "")
+}
+
+// RecordCourierRemittanceForAdmin records remittance and its admin audit row atomically.
+func (r *Repository) RecordCourierRemittanceForAdmin(ctx context.Context, courierID, reference string, amountMinor int64, adminID string) error {
 	if amountMinor <= 0 || courierID == "" || reference == "" {
 		return ledgerdomain.ErrInvalidEntry
 	}
@@ -79,15 +90,25 @@ func (r *Repository) RecordCourierRemittance(ctx context.Context, courierID, ref
 		return fmt.Errorf("check courier remittance idempotency: %w", err)
 	}
 	if alreadyRecorded {
+		var matches bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM ledger_entries le JOIN ledger_lines ll ON ll.entry_id=le.id JOIN ledger_accounts la ON la.id=ll.account_id WHERE le.source_key=$1 AND la.account_key=$2 AND ll.amount_minor=$3)`, "courier-remittance:"+reference, ledgerdomain.AccountKey(ledgerdomain.CourierCashReceivable, courierID), -amountMinor).Scan(&matches); err != nil {
+			return fmt.Errorf("verify courier remittance replay: %w", err)
+		}
+		if !matches {
+			return ledgerdomain.ErrInvalidEntry
+		}
 		return tx.Commit(ctx)
 	}
 	var balance int64
 	err = tx.QueryRow(ctx, `SELECT balance_minor FROM courier_cash_balances WHERE courier_id=$1 FOR UPDATE`, courierID).Scan(&balance)
-	if errors.Is(err, pgx.ErrNoRows) || (err == nil && amountMinor > balance) {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return ledgerdomain.ErrInsufficientCash
 	}
 	if err != nil {
 		return fmt.Errorf("lock courier cash balance: %w", err)
+	}
+	if _, err := ledgerdomain.RemittanceBalance(balance, amountMinor); err != nil {
+		return err
 	}
 	entry := ledgerdomain.Entry{
 		SourceKey: "courier-remittance:" + reference, EntryType: "courier_remittance", Currency: "ETB", Description: "Courier cash remittance",
@@ -105,6 +126,11 @@ func (r *Repository) RecordCourierRemittance(ctx context.Context, courierID, ref
 	}
 	if _, err := tx.Exec(ctx, `UPDATE courier_cash_balances SET balance_minor=balance_minor-$2,updated_at=now() WHERE courier_id=$1`, courierID, amountMinor); err != nil {
 		return fmt.Errorf("reduce courier cash balance: %w", err)
+	}
+	if adminID != "" {
+		if _, err := tx.Exec(ctx, `INSERT INTO admin_audit_log(admin_user_id,action,entity_type,entity_id,details) VALUES($1,'courier.settle_cod','courier',$2,jsonb_build_object('reference',$3,'amount_minor',$4))`, adminID, courierID, reference, amountMinor); err != nil {
+			return fmt.Errorf("audit courier remittance: %w", err)
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit courier remittance: %w", err)

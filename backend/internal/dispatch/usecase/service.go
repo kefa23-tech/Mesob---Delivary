@@ -42,7 +42,13 @@ func (s *Service) SetStatus(ctx context.Context, id domain.CourierID, online boo
 	if err := s.repository.UpdateCourierStatus(ctx, id, online, vehicle); err != nil {
 		return err
 	}
-	return s.presence.UpdateStatus(ctx, domain.CourierStatus{Courier: id, Online: online, Vehicle: vehicle})
+	if err := s.presence.UpdateStatus(ctx, domain.CourierStatus{Courier: id, Online: online, Vehicle: vehicle}); err != nil {
+		return err
+	}
+	if s.publisher != nil {
+		_ = s.publisher.Publish(ctx, realtime.Event{Type: realtime.CourierAvailabilityUpdated, CourierID: string(id), Data: map[string]any{"online": online, "vehicle_type": vehicle}})
+	}
+	return nil
 }
 func (s *Service) SetLocation(ctx context.Context, id domain.CourierID, lat, lng float64, headings ...float64) error {
 	if id == "" || math.IsNaN(lat) || math.IsNaN(lng) || math.IsInf(lat, 0) || math.IsInf(lng, 0) || lat < -90 || lat > 90 || lng < -180 || lng > 180 {
@@ -85,6 +91,38 @@ func (s *Service) Offers(ctx context.Context, id domain.CourierID) ([]domain.Ord
 		return nil, domain.ErrInvalidCourier
 	}
 	return s.presence.OffersForCourier(ctx, id)
+}
+
+func (s *Service) CourierDashboard(ctx context.Context, id domain.CourierID) (domain.CourierDashboard, error) {
+	if id == "" {
+		return domain.CourierDashboard{}, domain.ErrInvalidCourier
+	}
+	reader, ok := s.repository.(CourierConsoleReader)
+	if !ok {
+		return domain.CourierDashboard{}, errors.New("courier dashboard unavailable")
+	}
+	return reader.CourierDashboard(ctx, id)
+}
+func (s *Service) OfferDetails(ctx context.Context, courierID domain.CourierID, orderID domain.OrderID) (domain.OfferDetails, error) {
+	if courierID == "" || orderID == "" {
+		return domain.OfferDetails{}, domain.ErrInvalidCourier
+	}
+	offered, err := s.presence.IsOffered(ctx, orderID, courierID)
+	if err != nil {
+		return domain.OfferDetails{}, err
+	}
+	if !offered {
+		return domain.OfferDetails{}, domain.ErrOfferExpired
+	}
+	reader, ok := s.repository.(CourierConsoleReader)
+	if !ok {
+		return domain.OfferDetails{}, errors.New("courier offer details unavailable")
+	}
+	details, err := reader.OfferDetails(ctx, orderID)
+	if err != nil {
+		return domain.OfferDetails{}, err
+	}
+	return domain.OfferDetails{DeliveryDetails: details, ExpiresInSeconds: int(OfferWindow.Seconds())}, nil
 }
 
 func (s *Service) OfferStream(ctx context.Context, id domain.CourierID) (<-chan domain.Offer, error) {

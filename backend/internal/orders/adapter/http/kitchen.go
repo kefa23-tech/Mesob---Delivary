@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -8,12 +9,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/mesob-delivery/backend/internal/orders/domain"
 	"github.com/mesob-delivery/backend/internal/orders/usecase"
+	"github.com/mesob-delivery/backend/internal/realtime"
 )
 
-type KitchenHandler struct{ service *usecase.KitchenService }
+type KitchenHandler struct {
+	service  *usecase.KitchenService
+	realtime interface {
+		SubscribeRestaurant(context.Context, string) (<-chan realtime.Event, error)
+	}
+}
 
-func NewKitchenHandler(service *usecase.KitchenService) *KitchenHandler {
-	return &KitchenHandler{service: service}
+func NewKitchenHandler(service *usecase.KitchenService, subscriptions ...interface {
+	SubscribeRestaurant(context.Context, string) (<-chan realtime.Event, error)
+}) *KitchenHandler {
+	h := &KitchenHandler{service: service}
+	if len(subscriptions) > 0 {
+		h.realtime = subscriptions[0]
+	}
+	return h
 }
 func (h *KitchenHandler) Routes() chi.Router {
 	r := chi.NewRouter()

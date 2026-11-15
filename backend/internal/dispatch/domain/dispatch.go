@@ -78,6 +78,35 @@ type Offer struct {
 	DistanceKM       float64   `json:"distance_km"`
 	ExpiresInSeconds int       `json:"expires_in_seconds"`
 }
+
+type DeliveryDetails struct {
+	OrderID          string  `json:"order_id"`
+	Status           string  `json:"status"`
+	PaymentMethod    string  `json:"payment_method"`
+	RestaurantName   string  `json:"restaurant_name"`
+	RestaurantLat    float64 `json:"restaurant_lat"`
+	RestaurantLng    float64 `json:"restaurant_lng"`
+	DeliveryAddress  string  `json:"delivery_address"`
+	DeliveryLat      float64 `json:"delivery_lat"`
+	DeliveryLng      float64 `json:"delivery_lng"`
+	CustomerName     string  `json:"customer_name"`
+	CustomerPhone    string  `json:"customer_phone"`
+	TotalMinor       int64   `json:"total_minor"`
+	DeliveryFeeMinor int64   `json:"delivery_fee_minor"`
+}
+type CourierDashboard struct {
+	Online            bool             `json:"online"`
+	Vehicle           VehicleType      `json:"vehicle_type"`
+	CashBalanceMinor  int64            `json:"cash_balance_minor"`
+	ReservedCashMinor int64            `json:"reserved_cash_minor"`
+	CashLimitMinor    int64            `json:"cash_limit_minor"`
+	ActiveDelivery    *DeliveryDetails `json:"active_delivery,omitempty"`
+}
+type OfferDetails struct {
+	DeliveryDetails
+	DistanceKM       float64 `json:"distance_km"`
+	ExpiresInSeconds int     `json:"expires_in_seconds"`
+}
 type NearbyCourier struct {
 	ID         CourierID
 	DistanceKM float64

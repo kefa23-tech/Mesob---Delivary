@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,21 +12,38 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/mesob-delivery/backend/internal/dispatch/domain"
 	"github.com/mesob-delivery/backend/internal/dispatch/usecase"
+	"github.com/mesob-delivery/backend/internal/realtime"
 )
 
-type Handler struct{ service *usecase.Service }
+type Handler struct {
+	service  *usecase.Service
+	realtime interface {
+		SubscribeCourier(context.Context, string) (<-chan realtime.Event, error)
+	}
+}
 
-func NewHandler(service *usecase.Service) *Handler { return &Handler{service: service} }
+func NewHandler(service *usecase.Service, subscriptions ...interface {
+	SubscribeCourier(context.Context, string) (<-chan realtime.Event, error)
+}) *Handler {
+	h := &Handler{service: service}
+	if len(subscriptions) > 0 {
+		h.realtime = subscriptions[0]
+	}
+	return h
+}
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Use(requireCourier)
+	r.Get("/", h.dashboard)
 	r.Post("/status", h.status)
 	r.Post("/location", h.location)
 	r.Get("/offers", h.offers)
 	r.Get("/offers/stream", h.offerStream)
+	r.Get("/offers/{order_id}", h.offerDetails)
 	r.Post("/offers/{order_id}/accept", h.accept)
 	r.Post("/deliveries/{order_id}/pickup", h.pickup)
 	r.Post("/deliveries/{order_id}/complete", h.complete)
+	r.Get("/events/stream", h.eventsStream)
 	return r
 }
 func requireCourier(next http.Handler) http.Handler {
@@ -73,6 +91,82 @@ func (h *Handler) offers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"data": orders})
+}
+func (h *Handler) dashboard(w http.ResponseWriter, r *http.Request) {
+	snapshot, err := h.service.CourierDashboard(r.Context(), domain.CourierID(r.Header.Get("X-User-ID")))
+	if err != nil {
+		dispatchError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, snapshot)
+}
+func (h *Handler) offerDetails(w http.ResponseWriter, r *http.Request) {
+	details, err := h.service.OfferDetails(r.Context(), domain.CourierID(r.Header.Get("X-User-ID")), domain.OrderID(chi.URLParam(r, "order_id")))
+	if err != nil {
+		dispatchError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, details)
+}
+func (h *Handler) eventsStream(w http.ResponseWriter, r *http.Request) {
+	if h.realtime == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "courier event stream unavailable"})
+		return
+	}
+	courierID := r.Header.Get("X-User-ID")
+	events, err := h.realtime.SubscribeCourier(r.Context(), courierID)
+	if err != nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "courier event stream unavailable"})
+		return
+	}
+	snapshot, err := h.service.CourierDashboard(r.Context(), domain.CourierID(courierID))
+	if err != nil {
+		dispatchError(w, err)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	if writeDispatchSSE(w, "snapshot", snapshot) != nil {
+		return
+	}
+	flusher.Flush()
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case event, open := <-events:
+			if !open {
+				return
+			}
+			if writeDispatchSSE(w, string(event.Type), event) != nil {
+				return
+			}
+			flusher.Flush()
+		case <-ticker.C:
+			if _, err := fmt.Fprint(w, ": heartbeat\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
+}
+func writeDispatchSSE(w http.ResponseWriter, name string, value any) error {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, payload)
+	return err
 }
 func (h *Handler) offerStream(w http.ResponseWriter, r *http.Request) {
 	stream, err := h.service.OfferStream(r.Context(), domain.CourierID(r.Header.Get("X-User-ID")))
