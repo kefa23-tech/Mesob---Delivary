@@ -144,6 +144,25 @@ paths:
       operationId: listOrders
       parameters: [{ $ref: '#/components/parameters/Page' }]
       responses: { '200': { description: Orders, content: { application/json: { schema: { $ref: '#/components/schemas/OrderPage' } } } } }
+  /orders/{id}:
+    get:
+      tags: [Orders]
+      operationId: getOrderTrackingSnapshot
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses:
+        '200': { description: Current state, visible only to the customer who owns the order, content: { application/json: { schema: { $ref: '#/components/schemas/OrderTrackingSnapshot' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /orders/{id}/stream:
+    get:
+      tags: [Orders]
+      operationId: streamOrderTracking
+      description: Authenticated Server-Sent Events; emits a snapshot first, then typed order events, with 15 second keep-alive comments.
+      parameters: [{ $ref: '#/components/parameters/OrderId' }]
+      responses:
+        '200': { description: Snapshot and live order events, content: { text/event-stream: { schema: { type: string, description: 'SSE frames: event: snapshot followed by typed OrderRealtimeEvent data frames.' } } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /payments/{order_id}/initialize:
     post:
       tags: [Payments]
@@ -294,6 +313,7 @@ components:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
   parameters:
     RestaurantId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+    OrderId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     RestaurantOrderId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     DisputeId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
     JobId: { name: id, in: path, required: true, schema: { type: string, format: uuid } }
@@ -339,13 +359,15 @@ components:
     Order: { type: object, required: [id, user_id, restaurant_id, address_id, status, payment_method, payment_status, subtotal_minor, delivery_fee_minor, commission_minor, total_minor, currency, items, placed_at], properties: { id: { type: string, format: uuid }, user_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, address_id: { type: string, format: uuid }, status: { type: string, enum: [pending, confirmed, preparing, ready, dispatched, delivered, cancelled, PAID, CONFIRMED_COD, ACCEPTED, PREPARING, READY_FOR_PICKUP, COURIER_ASSIGNED, PICKED_UP, DELIVERED, REJECTED_BY_RESTAURANT, CANCELLED_TIMEOUT] }, payment_method: { type: string, enum: [TELEBIRR, CHAPA, COD] }, payment_status: { type: string, enum: [pending, pending_payment, paid, payment_failed, refund_pending] }, subtotal_minor: { type: integer, format: int64 }, delivery_fee_minor: { type: integer, format: int64 }, commission_minor: { type: integer, format: int64 }, total_minor: { type: integer, format: int64 }, currency: { type: string, example: ETB }, delivery_pin: { type: string, pattern: '^\\d{4}$', description: One-time customer delivery verification PIN returned at checkout }, items: { type: array, items: { $ref: '#/components/schemas/OrderItem' } }, placed_at: { type: string, format: date-time } } }
     PaymentInitialization: { type: object, required: [order_id, provider, reference, checkout_url], properties: { order_id: { type: string, format: uuid }, provider: { type: string, enum: [CHAPA, TELEBIRR] }, reference: { type: string }, checkout_url: { type: string, format: uri } } }
     OrderPage: { type: object, required: [data], properties: { data: { type: array, items: { $ref: '#/components/schemas/Order' } }, page: { type: integer }, total: { type: integer } } }
+    OrderTrackingSnapshot: { type: object, required: [id, status, payment_status, restaurant_id, restaurant_name, restaurant_lat, restaurant_lng, delivery_lat, delivery_lng, delivery_address], properties: { id: { type: string, format: uuid }, status: { type: string }, payment_status: { type: string }, restaurant_status: { type: string }, restaurant_id: { type: string, format: uuid }, restaurant_name: { type: string }, restaurant_lat: { type: number }, restaurant_lng: { type: number }, delivery_lat: { type: number }, delivery_lng: { type: number }, delivery_address: { type: string }, courier_id: { type: string, format: uuid }, courier_name: { type: string }, courier_phone: { type: string }, courier_vehicle: { type: string, enum: [bicycle, motorbike, car] }, courier_lat: { type: number }, courier_lng: { type: number }, courier_heading: { type: number }, eta_at: { type: string, format: date-time } } }
+    OrderRealtimeEvent: { type: object, required: [id, type, occurred_at], properties: { id: { type: string }, type: { type: string, enum: [ORDER_CREATED, ORDER_STATUS_UPDATED, COURIER_LOCATION_UPDATED, COURIER_OFFER_CREATED] }, order_id: { type: string, format: uuid }, restaurant_id: { type: string, format: uuid }, courier_id: { type: string, format: uuid }, status: { type: string }, occurred_at: { type: string, format: date-time }, location: { type: object, properties: { lat: { type: number }, lng: { type: number }, heading: { type: number }, eta_seconds: { type: integer }, eta_at: { type: string, format: date-time } } }, data: { type: object, additionalProperties: true } } }
     RestaurantDashboard: { type: object, properties: { restaurant: { $ref: '#/components/schemas/Restaurant' }, pending_orders: { type: integer }, revenue_minor: { type: integer, format: int64 } } }
     AcceptRestaurantOrderRequest: { type: object, required: [prep_minutes], properties: { prep_minutes: { type: integer, minimum: 1, maximum: 240 } } }
     RejectRestaurantOrderRequest: { type: object, required: [reason], properties: { reason: { type: string, enum: [OUT_OF_STOCK, TOO_BUSY, RESTAURANT_CLOSED, OTHER] } } }
     KitchenOrder: { allOf: [{ $ref: '#/components/schemas/Order' }, { type: object, properties: { customer_name: { type: string }, customer_phone: { type: string }, prep_minutes: { type: integer }, rejection_reason: { type: string } } }] }
     CourierDashboard: { type: object, properties: { active_deliveries: { type: integer }, cash_balance_minor: { type: integer, format: int64 }, available: { type: boolean } } }
     CourierStatusRequest: { type: object, required: [online, vehicle_type], properties: { online: { type: boolean }, vehicle_type: { type: string, enum: [bicycle, motorbike, car] } } }
-    CourierLocationRequest: { type: object, required: [lat, lng], properties: { lat: { type: number, format: double, minimum: -90, maximum: 90 }, lng: { type: number, format: double, minimum: -180, maximum: 180 } } }
+    CourierLocationRequest: { type: object, required: [lat, lng], properties: { lat: { type: number, format: double, minimum: -90, maximum: 90 }, lng: { type: number, format: double, minimum: -180, maximum: 180 }, heading: { type: number, format: double, minimum: 0, maximum: 360 } } }
     CourierOffer: { type: object, required: [order_id, courier_id, distance_km, expires_in_seconds], properties: { order_id: { type: string, format: uuid }, courier_id: { type: string, format: uuid }, distance_km: { type: number }, expires_in_seconds: { type: integer } } }
     CourierOffersResponse: { type: object, required: [data], properties: { data: { type: array, items: { type: string, format: uuid } } } }
     CompleteDeliveryRequest: { type: object, required: [pin], properties: { pin: { type: string, pattern: '^\\d{4}$' } } }

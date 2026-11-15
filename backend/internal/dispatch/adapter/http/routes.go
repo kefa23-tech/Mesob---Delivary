@@ -55,11 +55,12 @@ func (h *Handler) location(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Latitude  float64 `json:"lat"`
 		Longitude float64 `json:"lng"`
+		Heading   float64 `json:"heading"`
 	}
 	if !decode(w, r, &in) {
 		return
 	}
-	if err := h.service.SetLocation(r.Context(), domain.CourierID(r.Header.Get("X-User-ID")), in.Latitude, in.Longitude); err != nil {
+	if err := h.service.SetLocation(r.Context(), domain.CourierID(r.Header.Get("X-User-ID")), in.Latitude, in.Longitude, in.Heading); err != nil {
 		dispatchError(w, err)
 		return
 	}

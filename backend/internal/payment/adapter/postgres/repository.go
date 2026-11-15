@@ -19,6 +19,12 @@ type Repository struct {
 	ledger *ledgerusecase.Service
 }
 
+func (r *Repository) RestaurantID(ctx context.Context, orderID string) (string, error) {
+	var id string
+	err := r.pool.QueryRow(ctx, `SELECT restaurant_id::text FROM orders WHERE id=$1`, orderID).Scan(&id)
+	return id, err
+}
+
 func NewRepository(pool *pgxpool.Pool, ledger ...*ledgerusecase.Service) *Repository {
 	repo := &Repository{pool: pool}
 	if len(ledger) > 0 {

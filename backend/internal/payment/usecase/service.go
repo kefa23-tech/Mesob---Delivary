@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mesob-delivery/backend/internal/payment/domain"
+	"github.com/mesob-delivery/backend/internal/realtime"
 )
 
 var PollDelays = []time.Duration{time.Minute, 3 * time.Minute, 5 * time.Minute}
@@ -20,10 +21,15 @@ type Service struct {
 	queue        Queue
 	callbackBase string
 	returnBase   string
+	publisher    realtime.Publisher
 }
 
-func NewService(repository Repository, gateways GatewayRegistry, queue Queue, callbackBase, returnBase string) *Service {
-	return &Service{repository: repository, gateways: gateways, queue: queue, callbackBase: strings.TrimRight(callbackBase, "/"), returnBase: strings.TrimRight(returnBase, "/")}
+func NewService(repository Repository, gateways GatewayRegistry, queue Queue, callbackBase, returnBase string, publishers ...realtime.Publisher) *Service {
+	s := &Service{repository: repository, gateways: gateways, queue: queue, callbackBase: strings.TrimRight(callbackBase, "/"), returnBase: strings.TrimRight(returnBase, "/")}
+	if len(publishers) > 0 {
+		s.publisher = publishers[0]
+	}
+	return s
 }
 
 type InitializeResponse struct {
@@ -124,9 +130,12 @@ func (s *Service) HandleWebhook(ctx context.Context, provider domain.Provider, r
 		return nil
 	}
 	if verification.Status == domain.Failed {
-		_, transitioned, err := s.repository.FailAndRestore(ctx, provider, event.Reference)
-		if err == nil && transitioned && s.queue != nil {
-			_ = s.queue.CancelPolling(ctx, provider, event.Reference)
+		orderID, transitioned, err := s.repository.FailAndRestore(ctx, provider, event.Reference)
+		if err == nil && transitioned {
+			s.publishCancelled(ctx, orderID)
+			if s.queue != nil {
+				_ = s.queue.CancelPolling(ctx, provider, event.Reference)
+			}
 		}
 		return err
 	}
@@ -162,21 +171,27 @@ func (s *Service) Poll(ctx context.Context, provider domain.Provider, reference 
 			s.afterPaid(ctx, provider, reference, orderID)
 		}
 	case domain.Failed:
-		_, transitioned, err := s.repository.FailAndRestore(ctx, provider, reference)
+		orderID, transitioned, err := s.repository.FailAndRestore(ctx, provider, reference)
 		if err != nil {
 			return err
 		}
-		if transitioned && s.queue != nil {
-			_ = s.queue.CancelPolling(ctx, provider, reference)
+		if transitioned {
+			s.publishCancelled(ctx, orderID)
+			if s.queue != nil {
+				_ = s.queue.CancelPolling(ctx, provider, reference)
+			}
 		}
 	default:
 		if attempt >= len(PollDelays) {
-			_, transitioned, err := s.repository.FailAndRestore(ctx, provider, reference)
+			orderID, transitioned, err := s.repository.FailAndRestore(ctx, provider, reference)
 			if err != nil {
 				return err
 			}
-			if transitioned && s.queue != nil {
-				_ = s.queue.CancelPolling(ctx, provider, reference)
+			if transitioned {
+				s.publishCancelled(ctx, orderID)
+				if s.queue != nil {
+					_ = s.queue.CancelPolling(ctx, provider, reference)
+				}
 			}
 		}
 	}
@@ -184,6 +199,7 @@ func (s *Service) Poll(ctx context.Context, provider domain.Provider, reference 
 }
 
 func (s *Service) afterPaid(ctx context.Context, provider domain.Provider, reference, orderID string) {
+	s.publishStatus(ctx, orderID, "PAID")
 	if s.queue == nil {
 		return
 	}
@@ -193,6 +209,21 @@ func (s *Service) afterPaid(ctx context.Context, provider domain.Provider, refer
 		ScheduleRestaurantSLA(context.Context, string, time.Duration) error
 	}); ok {
 		_ = scheduler.ScheduleRestaurantSLA(ctx, orderID, 5*time.Minute)
+	}
+}
+
+func (s *Service) publishCancelled(ctx context.Context, orderID string) {
+	s.publishStatus(ctx, orderID, "cancelled")
+}
+func (s *Service) publishStatus(ctx context.Context, orderID, status string) {
+	if s.publisher != nil {
+		event := realtime.Event{Type: realtime.OrderStatusUpdated, OrderID: orderID, Status: status}
+		if resolver, ok := s.repository.(interface {
+			RestaurantID(context.Context, string) (string, error)
+		}); ok {
+			event.RestaurantID, _ = resolver.RestaurantID(ctx, orderID)
+		}
+		_ = s.publisher.Publish(ctx, event)
 	}
 }
 

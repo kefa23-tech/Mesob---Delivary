@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/mesob-delivery/backend/internal/orders/domain"
+	"github.com/mesob-delivery/backend/internal/realtime"
 )
 
 type CheckoutService struct {
@@ -13,12 +14,18 @@ type CheckoutService struct {
 	idempotency IdempotencyStore
 	carts       GroupCartConverter
 	scheduler   RestaurantSLAScheduler
+	publisher   realtime.Publisher
 }
 
-func NewCheckoutService(orders CheckoutRepository, idempotency IdempotencyStore, carts GroupCartConverter, schedulers ...RestaurantSLAScheduler) *CheckoutService {
+func NewCheckoutService(orders CheckoutRepository, idempotency IdempotencyStore, carts GroupCartConverter, extras ...any) *CheckoutService {
 	s := &CheckoutService{orders: orders, idempotency: idempotency, carts: carts}
-	if len(schedulers) > 0 {
-		s.scheduler = schedulers[0]
+	for _, extra := range extras {
+		if scheduler, ok := extra.(RestaurantSLAScheduler); ok && s.scheduler == nil {
+			s.scheduler = scheduler
+		}
+		if publisher, ok := extra.(realtime.Publisher); ok {
+			s.publisher = publisher
+		}
 	}
 	return s
 }
@@ -72,6 +79,9 @@ func (s *CheckoutService) Place(ctx context.Context, userID, key string, request
 	// From this point the database has committed; keep the Redis claim even if
 	// response caching fails, so a retry cannot execute checkout a second time.
 	complete = true
+	if s.publisher != nil {
+		_ = s.publisher.Publish(ctx, realtime.Event{Type: realtime.OrderCreated, OrderID: order.ID, RestaurantID: order.RestaurantID, Status: string(order.Status)})
+	}
 	if request.PaymentMethod == domain.PaymentCOD && s.scheduler != nil {
 		_ = s.scheduler.ScheduleRestaurantSLA(ctx, order.ID, RestaurantAcceptanceSLA)
 	}

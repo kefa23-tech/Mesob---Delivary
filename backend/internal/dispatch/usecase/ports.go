@@ -26,6 +26,10 @@ type Repository interface {
 	MarkManualIntervention(context.Context, domain.OrderID) error
 }
 
+type ActiveDeliveryReader interface {
+	ActiveDelivery(context.Context, domain.CourierID) (string, string, float64, float64, error)
+}
+
 type PresenceRegistry interface {
 	UpdateStatus(context.Context, domain.CourierStatus) error
 	UpdateLocation(context.Context, domain.Location) error

@@ -96,6 +96,7 @@ export function CheckoutClient({ groupToken }: { groupToken?: string }) {
         idempotencyKey: attemptKey,
       });
       if (orderError || !order) throw new Error('order');
+      if (order.delivery_pin) sessionStorage.setItem(`mesob_delivery_pin:${order.id}`, order.delivery_pin);
       if (paymentMethod === 'COD') {
         router.push(`/${locale}/checkout/verify/${order.id}`);
         return;

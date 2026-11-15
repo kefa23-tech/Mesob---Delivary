@@ -44,6 +44,7 @@ import (
 	paymentdomain "github.com/mesob-delivery/backend/internal/payment/domain"
 	paymentusecase "github.com/mesob-delivery/backend/internal/payment/usecase"
 	"github.com/mesob-delivery/backend/internal/platform/httpmiddleware"
+	realtimeredis "github.com/mesob-delivery/backend/internal/realtime/adapter/redis"
 )
 
 type config struct {
@@ -133,11 +134,17 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 		return err
 	}
 	defer dispatchQueue.Close()
-	dispatchService := dispatchusecase.NewService(dispatchpostgres.NewRepository(database), dispatchRegistry, dispatchQueue, dispatchRegistry)
+	realtimeHub, err := realtimeredis.New(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer realtimeHub.Close()
+	dispatchService := dispatchusecase.NewService(dispatchpostgres.NewRepository(database), dispatchRegistry, dispatchQueue, dispatchRegistry, realtimeHub)
 	dispatchHandler := dispatchhttp.NewHandler(dispatchService)
-	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore, paymentQueue)
-	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService)
-	kitchenService := ordersusecase.NewKitchenService(orderRepository, paymentQueue, dispatchQueue)
+	checkoutService := ordersusecase.NewCheckoutService(orderRepository, groupCartStore, groupCartStore, paymentQueue, realtimeHub)
+	trackingService := ordersusecase.NewTrackingService(orderRepository, realtimeHub, realtimeHub)
+	checkoutHandler := ordershttp.NewCheckoutHandler(checkoutService).WithTracking(ordershttp.NewTrackingHandler(trackingService, cfg.JWTSecret))
+	kitchenService := ordersusecase.NewKitchenService(orderRepository, paymentQueue, dispatchQueue, realtimeHub)
 	kitchenHandler := ordershttp.NewKitchenHandler(kitchenService)
 	paymentGateways := paymentclients.Registry{
 		paymentdomain.Chapa:    paymentclients.NewChapaClient(cfg.ChapaAPIURL, cfg.ChapaSecretKey, nil),
@@ -145,7 +152,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	}
 	ledgerRepository := ledgerpostgres.NewRepository(database)
 	ledgerService := ledgerusecase.NewService(ledgerRepository)
-	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL)
+	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL, realtimeHub)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
 	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService)
 	if err != nil {

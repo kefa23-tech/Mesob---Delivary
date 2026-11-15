@@ -212,6 +212,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/orders/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["getOrderTrackingSnapshot"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/orders/{id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Authenticated Server-Sent Events; emits a snapshot first, then typed order events, with 15 second keep-alive comments. */
+        get: operations["streamOrderTracking"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/payments/{order_id}/initialize": {
         parameters: {
             query?: never;
@@ -805,6 +838,57 @@ export interface components {
             page?: number;
             total?: number;
         };
+        OrderTrackingSnapshot: {
+            /** Format: uuid */
+            id: string;
+            status: string;
+            payment_status: string;
+            restaurant_status?: string;
+            /** Format: uuid */
+            restaurant_id: string;
+            restaurant_name: string;
+            restaurant_lat: number;
+            restaurant_lng: number;
+            delivery_lat: number;
+            delivery_lng: number;
+            delivery_address: string;
+            /** Format: uuid */
+            courier_id?: string;
+            courier_name?: string;
+            courier_phone?: string;
+            /** @enum {string} */
+            courier_vehicle?: "bicycle" | "motorbike" | "car";
+            courier_lat?: number;
+            courier_lng?: number;
+            courier_heading?: number;
+            /** Format: date-time */
+            eta_at?: string;
+        };
+        OrderRealtimeEvent: {
+            id: string;
+            /** @enum {string} */
+            type: "ORDER_CREATED" | "ORDER_STATUS_UPDATED" | "COURIER_LOCATION_UPDATED" | "COURIER_OFFER_CREATED";
+            /** Format: uuid */
+            order_id?: string;
+            /** Format: uuid */
+            restaurant_id?: string;
+            /** Format: uuid */
+            courier_id?: string;
+            status?: string;
+            /** Format: date-time */
+            occurred_at: string;
+            location?: {
+                lat?: number;
+                lng?: number;
+                heading?: number;
+                eta_seconds?: number;
+                /** Format: date-time */
+                eta_at?: string;
+            };
+            data?: {
+                [key: string]: unknown;
+            };
+        };
         RestaurantDashboard: {
             restaurant?: components["schemas"]["Restaurant"];
             pending_orders?: number;
@@ -840,6 +924,8 @@ export interface components {
             lat: number;
             /** Format: double */
             lng: number;
+            /** Format: double */
+            heading?: number;
         };
         CourierOffer: {
             /** Format: uuid */
@@ -922,6 +1008,7 @@ export interface components {
     };
     parameters: {
         RestaurantId: string;
+        OrderId: string;
         RestaurantOrderId: string;
         DisputeId: string;
         JobId: string;
@@ -1316,6 +1403,54 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
+        };
+    };
+    getOrderTrackingSnapshot: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Current state */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderTrackingSnapshot"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    streamOrderTracking: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: components["parameters"]["OrderId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Snapshot and live order events */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
         };
     };
     initializeOrderPayment: {

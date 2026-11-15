@@ -10,15 +10,25 @@ import (
 	"github.com/mesob-delivery/backend/internal/orders/usecase"
 )
 
-type CheckoutHandler struct{ service *usecase.CheckoutService }
+type CheckoutHandler struct {
+	service  *usecase.CheckoutService
+	tracking *TrackingHandler
+}
 
 func NewCheckoutHandler(service *usecase.CheckoutService) *CheckoutHandler {
 	return &CheckoutHandler{service: service}
+}
+func (h *CheckoutHandler) WithTracking(tracking *TrackingHandler) *CheckoutHandler {
+	h.tracking = tracking
+	return h
 }
 
 func (h *CheckoutHandler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Post("/", h.place)
+	if h.tracking != nil {
+		h.tracking.Register(r)
+	}
 	return r
 }
 
