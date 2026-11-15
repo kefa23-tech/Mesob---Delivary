@@ -209,6 +209,9 @@ WHERE og.menu_item_id=$1 ORDER BY og.sort_order, og.id, o.sort_order, o.id`, id)
 		order.SubtotalMinor += lineTotal
 		order.Items = append(order.Items, domain.OrderItem{MenuItemID: line.MenuItemID, ItemName: item.name, UnitPriceMinor: unit, Quantity: line.Quantity, Options: line.Options, LineTotalMinor: lineTotal})
 	}
+	if request.GroupCartToken != "" && order.SubtotalMinor >= domain.GroupDiscountThresholdMinor {
+		order.DeliveryFeeMinor = DeliveryFeeMinor / 2
+	}
 	order.CommissionMinor = order.SubtotalMinor/10_000*commissionBasisPoints + (order.SubtotalMinor%10_000*commissionBasisPoints+5_000)/10_000
 	order.TotalMinor = order.SubtotalMinor + order.DeliveryFeeMinor
 	if request.PaymentMethod == domain.PaymentCOD {
@@ -329,7 +332,7 @@ func (r *Repository) MarkRestaurantOrderReady(ctx context.Context, partnerID, or
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	var o domain.KitchenOrder
 	var placed time.Time
-	err = tx.QueryRow(ctx, `UPDATE orders o SET status=CASE WHEN o.courier_id IS NULL THEN 'READY_FOR_PICKUP' ELSE 'COURIER_ASSIGNED' END,ready_at=COALESCE(o.ready_at,now()),updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status IN ('PREPARING','COURIER_ASSIGNED') RETURNING o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,COALESCE(o.prep_minutes,0)`, orderID, partnerID).Scan(&o.ID, &o.UserID, &o.RestaurantID, &o.AddressID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.SubtotalMinor, &o.DeliveryFeeMinor, &o.CommissionMinor, &o.TotalMinor, &o.Currency, &placed, &o.PrepMinutes)
+	err = tx.QueryRow(ctx, `UPDATE orders o SET status=CASE WHEN o.courier_id IS NULL THEN 'READY_FOR_PICKUP' ELSE 'COURIER_ASSIGNED' END,restaurant_status='READY_FOR_PICKUP',ready_at=COALESCE(o.ready_at,now()),updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status IN ('PREPARING','COURIER_ASSIGNED') RETURNING o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,COALESCE(o.prep_minutes,0)`, orderID, partnerID).Scan(&o.ID, &o.UserID, &o.RestaurantID, &o.AddressID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.SubtotalMinor, &o.DeliveryFeeMinor, &o.CommissionMinor, &o.TotalMinor, &o.Currency, &placed, &o.PrepMinutes)
 	if err != nil {
 		return domain.KitchenOrder{}, fmt.Errorf("mark order ready: %w", err)
 	}
@@ -351,7 +354,7 @@ func (r *Repository) transitionKitchenOrder(ctx context.Context, partnerID, orde
 	var o domain.KitchenOrder
 	var placed time.Time
 	var prepValue int
-	err = tx.QueryRow(ctx, `UPDATE orders o SET status=$3,prep_minutes=CASE WHEN $4>0 THEN $4 ELSE prep_minutes END,accepted_at=CASE WHEN $3='ACCEPTED' THEN now() ELSE accepted_at END,updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status=ANY($5::text[]) RETURNING o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,COALESCE(o.prep_minutes,0)`, orderID, partnerID, string(next), prep, from).Scan(&o.ID, &o.UserID, &o.RestaurantID, &o.AddressID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.SubtotalMinor, &o.DeliveryFeeMinor, &o.CommissionMinor, &o.TotalMinor, &o.Currency, &placed, &prepValue)
+	err = tx.QueryRow(ctx, `UPDATE orders o SET status=$3,restaurant_status=CASE WHEN $3 IN ('ACCEPTED','PREPARING') THEN $3 ELSE restaurant_status END,prep_minutes=CASE WHEN $4>0 THEN $4 ELSE prep_minutes END,accepted_at=CASE WHEN $3='ACCEPTED' THEN now() ELSE accepted_at END,updated_at=now() FROM restaurants r JOIN users u ON u.id=r.owner_id WHERE o.id=$1 AND r.id=o.restaurant_id AND r.owner_id=$2 AND u.role='restaurant_owner' AND o.status=ANY($5::text[]) RETURNING o.id::text,o.user_id::text,o.restaurant_id::text,o.delivery_address_id::text,o.status,o.payment_method,o.payment_status,o.subtotal_minor,o.delivery_fee_minor,o.commission_minor,o.total_minor,o.currency,o.placed_at,COALESCE(o.prep_minutes,0)`, orderID, partnerID, string(next), prep, from).Scan(&o.ID, &o.UserID, &o.RestaurantID, &o.AddressID, &o.Status, &o.PaymentMethod, &o.PaymentStatus, &o.SubtotalMinor, &o.DeliveryFeeMinor, &o.CommissionMinor, &o.TotalMinor, &o.Currency, &placed, &prepValue)
 	if err != nil {
 		return domain.KitchenOrder{}, fmt.Errorf("transition kitchen order: %w", err)
 	}
