@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/infrastructure/api/client';
 import type { components } from '@/infrastructure/api/generated';
 
-type Tab = 'overview' | 'kyc' | 'ledger';
+type Tab = 'overview' | 'kyc' | 'ledger' | 'ops';
 type KYCQueue = components['schemas']['AdminKYCQueue'];
 type StuckOrder = components['schemas']['AdminStuckOrder'];
 type LedgerPage = components['schemas']['AdminLedgerPage'];
@@ -16,7 +16,7 @@ export default function OperationsPage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [target, setTarget] = useState<StuckOrder | null>(null);
   const [drawerCourier, setDrawerCourier] = useState(false);
-  const nav = [{ id: 'overview' as const, label: 'Dispatch radar', icon: '◈' }, { id: 'kyc' as const, label: 'KYC verification', icon: '▤' }, { id: 'ledger' as const, label: 'Financial ledger', icon: '◎' }];
+  const nav = [{ id: 'overview' as const, label: 'Dispatch radar', icon: '◈' }, { id: 'kyc' as const, label: 'KYC verification', icon: '▤' }, { id: 'ledger' as const, label: 'Financial ledger', icon: '◎' }, { id: 'ops' as const, label: 'System Ops & DLQ', icon: '⌁' }];
   return <div className="min-h-screen bg-[#f5f7f6] text-slate-900 lg:flex">
     <aside className="flex w-full flex-col bg-[#102d27] text-white lg:min-h-screen lg:w-64">
       <div className="flex items-center gap-3 border-b border-white/10 px-6 py-6"><div className="grid h-10 w-10 place-items-center rounded-xl bg-emerald-400 font-bold text-[#102d27]">M</div><div><p className="font-semibold">Mesob</p><p className="text-xs text-emerald-100/60">Operations console</p></div></div>
@@ -28,10 +28,26 @@ export default function OperationsPage() {
       {tab === 'overview' && <Overview onSelectOrder={setTarget} />}
       {tab === 'kyc' && <Verification />}
       {tab === 'ledger' && <Ledger onSettle={() => setDrawerCourier(true)} />}
+      {tab === 'ops' && <SystemOps />}
       {target && <ActionModal order={target} onClose={() => setTarget(null)} />}
       {drawerCourier && <SettlementDrawer onClose={() => setDrawerCourier(false)} />}
     </main>
   </div>;
+}
+
+function SystemOps() {
+  type DLQQueue = 'critical' | 'default' | 'low' | 'payments' | 'dispatch';
+  const client = useQueryClient();
+  const dlq = useQuery({ queryKey: ['admin', 'ops-dlq'], queryFn: async () => { const result = await apiClient.GET('/admin/ops/dlq'); if (result.error || !result.data) throw new Error('Could not load DLQ tasks'); return result.data; }, refetchInterval: 15_000 });
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState('');
+  const action = useMutation({ mutationFn: async ({queue, id, retry}: {queue: DLQQueue; id: string; retry: boolean}) => { if(retry) { const result = await apiClient.POST('/admin/ops/dlq/{queue}/{task_id}/retry', {params:{path:{queue,task_id:id}}}); if(result.error) throw new Error('Retry failed'); } else { const result = await apiClient.DELETE('/admin/ops/dlq/{queue}/{task_id}', {params:{path:{queue,task_id:id}}}); if(result.error) throw new Error('Archive action failed'); } }, onSuccess: async (_, variables) => { setFeedback(variables.retry?'Task re-enqueued.':'Task acknowledged and deleted.'); await client.invalidateQueries({queryKey:['admin','ops-dlq']}); }, onError:(error)=>setFeedback(error.message) });
+  const queues = dlq.data?.queue_depths ?? {};
+  const tasks = dlq.data?.tasks ?? [];
+  return <>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">{Object.entries(queues).map(([queue,depth])=><Metric key={queue} label={`${queue} queue`} value={String(depth)} note="Active queue depth" alert={depth>0}/>)}</div>
+    <section className="mt-8 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-6 py-5"><div><h2 className="text-lg font-semibold">Dead-letter tasks</h2><p className="mt-1 text-sm text-slate-500">Archived worker tasks across the supported queues.</p></div><span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-800">{tasks.length} failed</span></div>{feedback&&<p className="px-6 pt-4 text-sm text-emerald-800">{feedback}</p>}{dlq.isLoading?<Loading/>:dlq.error?<ErrorState message="Dead-letter tasks could not be loaded."/>:!tasks.length?<Empty title="No archived tasks" detail="Archived background jobs will appear here."/>:<div className="divide-y divide-slate-100">{tasks.map((task)=><article key={`${task.queue}/${task.id}`} className="px-6 py-5"><div className="flex flex-wrap items-start justify-between gap-4"><button onClick={()=>setExpanded(expanded===task.id?null:task.id)} className="text-left"><p className="font-semibold">{task.type} <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">{task.queue}</span></p><p className="mt-1 text-sm text-slate-500">{task.payload_summary} · retry {task.retry_count} · {task.last_failed_at?new Date(task.last_failed_at).toLocaleString():'time unavailable'}</p></button><div className="flex gap-2"><button disabled={action.isPending} onClick={()=>action.mutate({queue:task.queue as DLQQueue,id:task.id,retry:true})} className="rounded-lg bg-emerald-800 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Retry task</button><button disabled={action.isPending} onClick={()=>action.mutate({queue:task.queue as DLQQueue,id:task.id,retry:false})} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 disabled:opacity-50">Archive</button></div></div>{expanded===task.id&&<div className="mt-4 grid gap-3 lg:grid-cols-2"><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Failure</p><pre className="mt-2 whitespace-pre-wrap rounded-xl bg-rose-50 p-4 text-xs text-rose-900">{task.last_error}</pre></div><div><p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payload</p><pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap rounded-xl bg-slate-50 p-4 text-xs text-slate-700">{task.payload}</pre></div></div>}</article>)}</div>}</section>
+  </>;
 }
 
 function Overview({ onSelectOrder }: { onSelectOrder: (order: StuckOrder) => void }) {

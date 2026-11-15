@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/url"
 	"strconv"
 	"strings"
@@ -12,13 +13,16 @@ import (
 
 	"github.com/hibiken/asynq"
 	"github.com/mesob-delivery/backend/internal/payment/domain"
+	"github.com/mesob-delivery/backend/internal/platform/workerobs"
 )
 
 const (
-	QueueName             = "payments"
-	pollTaskType          = "mesob:payment:poll"
-	notifyTaskType        = "mesob:restaurant:order_paid"
-	restaurantSLATaskType = "order:restaurant_sla_timeout"
+	QueueName                 = "payments"
+	pollTaskType              = "mesob:payment:poll"
+	notifyTaskType            = "mesob:restaurant:order_paid"
+	restaurantSLATaskType     = "order:restaurant_sla_timeout"
+	reconcilePaymentsTaskType = "payment:reconcile_orphaned"
+	cleanupEphemeralTaskType  = "ops:cleanup_ephemeral_locks"
 )
 
 type Queue struct {
@@ -105,13 +109,15 @@ type notifier interface {
 type slaTimeoutHandler interface {
 	HandleSLATimeout(context.Context, string) error
 }
+type orphanedPaymentReconciler interface{ ReconcileOrphanedPayments(context.Context) error }
+type ephemeralLockCleaner interface{ CleanupEphemeralLocks(context.Context) error }
 
 type Worker struct {
 	server *asynq.Server
 	mux    *asynq.ServeMux
 }
 
-func NewWorker(redisURL string, paymentPoller poller, notifications notifier, slaHandlers ...slaTimeoutHandler) (*Worker, error) {
+func NewWorker(redisURL string, paymentPoller poller, notifications notifier, handlers ...any) (*Worker, error) {
 	opt, err := redisOptions(redisURL)
 	if err != nil {
 		return nil, err
@@ -139,21 +145,29 @@ func NewWorker(redisURL string, paymentPoller poller, notifications notifier, sl
 		}
 		return notifications.RestaurantOrderPaid(ctx, payload.OrderID)
 	})
-	if len(slaHandlers) > 0 {
-		mux.HandleFunc(restaurantSLATaskType, func(ctx context.Context, task *asynq.Task) error {
-			var p struct {
-				OrderID string `json:"order_id"`
-			}
-			if err := json.Unmarshal(task.Payload(), &p); err != nil {
-				return err
-			}
-			if p.OrderID == "" {
-				return errors.New("restaurant SLA task has no order id")
-			}
-			return slaHandlers[0].HandleSLATimeout(ctx, p.OrderID)
-		})
+	for _, handler := range handlers {
+		if slaHandler, ok := handler.(slaTimeoutHandler); ok {
+			mux.HandleFunc(restaurantSLATaskType, func(ctx context.Context, task *asynq.Task) error {
+				var p struct {
+					OrderID string `json:"order_id"`
+				}
+				if err := json.Unmarshal(task.Payload(), &p); err != nil {
+					return err
+				}
+				if p.OrderID == "" {
+					return errors.New("restaurant SLA task has no order id")
+				}
+				return slaHandler.HandleSLATimeout(ctx, p.OrderID)
+			})
+		}
+		if cleaner, ok := handler.(ephemeralLockCleaner); ok {
+			mux.HandleFunc(cleanupEphemeralTaskType, func(ctx context.Context, _ *asynq.Task) error { return cleaner.CleanupEphemeralLocks(ctx) })
+		}
 	}
-	return &Worker{server: asynq.NewServer(opt, asynq.Config{Concurrency: 8, Queues: map[string]int{QueueName: 5, "default": 1}}), mux: mux}, nil
+	if reconciler, ok := paymentPoller.(orphanedPaymentReconciler); ok {
+		mux.HandleFunc(reconcilePaymentsTaskType, func(ctx context.Context, _ *asynq.Task) error { return reconciler.ReconcileOrphanedPayments(ctx) })
+	}
+	return &Worker{server: asynq.NewServer(opt, asynq.Config{Concurrency: 8, Queues: map[string]int{QueueName: 5, "default": 1}, ErrorHandler: workerobs.ErrorHandler(slog.Default())}), mux: mux}, nil
 }
 func (w *Worker) Run() error { return w.server.Run(w.mux) }
 func (w *Worker) Shutdown()  { w.server.Shutdown() }

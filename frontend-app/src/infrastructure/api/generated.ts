@@ -792,6 +792,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/ops/dlq": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["adminListOpsDLQ"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ops/dlq/{queue}/{task_id}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["adminRetryOpsDLQTask"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/ops/dlq/{queue}/{task_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["adminDeleteOpsDLQTask"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1299,6 +1347,23 @@ export interface components {
             resolution: string;
             /** Format: int64 */
             refund_minor?: number;
+        };
+        AdminDLQTask: {
+            id: string;
+            queue: string;
+            type: string;
+            payload?: string;
+            payload_summary: string;
+            last_error: string;
+            retry_count: number;
+            /** Format: date-time */
+            last_failed_at: string;
+        };
+        AdminDLQResponse: {
+            tasks: components["schemas"]["AdminDLQTask"][];
+            queue_depths: {
+                [key: string]: number;
+            };
         };
         DeadLetterJob: {
             /** Format: uuid */
@@ -2790,6 +2855,91 @@ export interface operations {
                 };
                 content?: never;
             };
+        };
+    };
+    adminListOpsDLQ: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived Asynq tasks and queue depths */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDLQResponse"];
+                };
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    adminRetryOpsDLQTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue: "critical" | "default" | "low" | "payments" | "dispatch";
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived task re-enqueued */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
+        };
+    };
+    adminDeleteOpsDLQTask: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue: "critical" | "default" | "low" | "payments" | "dispatch";
+                task_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Archived task acknowledged and deleted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Active administrator role required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            404: components["responses"]["NotFound"];
         };
     };
 }

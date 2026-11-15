@@ -14,6 +14,7 @@ import (
 
 	paymentclients "github.com/mesob-delivery/backend/internal/adapter/payment"
 	"github.com/mesob-delivery/backend/internal/adapter/postgres"
+	adminasynq "github.com/mesob-delivery/backend/internal/admin/adapter/asynq"
 	adminhttp "github.com/mesob-delivery/backend/internal/admin/adapter/http"
 	adminpostgres "github.com/mesob-delivery/backend/internal/admin/adapter/postgres"
 	adminusecase "github.com/mesob-delivery/backend/internal/admin/usecase"
@@ -47,6 +48,7 @@ import (
 	paymentdomain "github.com/mesob-delivery/backend/internal/payment/domain"
 	paymentusecase "github.com/mesob-delivery/backend/internal/payment/usecase"
 	"github.com/mesob-delivery/backend/internal/platform/httpmiddleware"
+	"github.com/mesob-delivery/backend/internal/platform/workerobs"
 	realtimeredis "github.com/mesob-delivery/backend/internal/realtime/adapter/redis"
 )
 
@@ -157,9 +159,15 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	ledgerService := ledgerusecase.NewService(ledgerRepository)
 	adminService := adminusecase.NewOperations(adminpostgres.NewRepository(database))
 	adminHandler := adminhttp.NewHandler(adminService, database)
+	dlqInspector, err := adminasynq.NewInspector(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer dlqInspector.Close()
+	adminHandler.WithDLQ(dlqInspector)
 	paymentService := paymentusecase.NewService(paymentpostgres.NewRepository(database, ledgerService), paymentGateways, paymentQueue, cfg.PublicAPIURL, cfg.WebAppURL, realtimeHub)
 	paymentHandler := paymenthttp.NewHandler(paymentService, cfg.ChapaWebhookSecret, cfg.TelebirrWebhookSecret)
-	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService)
+	paymentWorker, err := paymentasynq.NewWorker(cfg.RedisURL, paymentService, restaurantPaymentNotifier{logger: logger}, kitchenService, groupCartStore)
 	if err != nil {
 		return err
 	}
@@ -167,6 +175,16 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	go func() {
 		if err := paymentWorker.Run(); err != nil {
 			logger.Error("payment worker stopped", "error", err)
+		}
+	}()
+	paymentScheduler, err := paymentasynq.NewScheduler(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer paymentScheduler.Shutdown()
+	go func() {
+		if err := paymentScheduler.Run(); err != nil {
+			logger.Error("payment scheduler stopped", "error", err)
 		}
 	}()
 	dispatchWorker, err := dispatchasynq.NewWorker(cfg.RedisURL, dispatchService)
@@ -177,6 +195,16 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 	go func() {
 		if err := dispatchWorker.Run(); err != nil {
 			logger.Error("dispatch worker stopped", "error", err)
+		}
+	}()
+	dispatchScheduler, err := dispatchasynq.NewScheduler(cfg.RedisURL)
+	if err != nil {
+		return err
+	}
+	defer dispatchScheduler.Shutdown()
+	go func() {
+		if err := dispatchScheduler.Run(); err != nil {
+			logger.Error("dispatch scheduler stopped", "error", err)
 		}
 	}()
 	users := authpostgres.NewUserRepository(database)
@@ -198,6 +226,7 @@ func run(parent context.Context, cfg config, logger *slog.Logger) error {
 
 	router := chi.NewRouter()
 	router.Use(httpmiddleware.RequestID)
+	router.Get("/metrics", workerobs.MetricsHandler)
 	router.Mount("/api/v1", healthHandler.Routes())
 	router.Mount("/api/v1/auth", authHandler.Routes())
 	router.Mount("/api/v1/restaurants", catalogHandler.Routes())

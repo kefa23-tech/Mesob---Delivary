@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,6 +18,26 @@ import (
 type Repository struct {
 	pool   *pgxpool.Pool
 	ledger *ledgerusecase.Service
+}
+
+func (r *Repository) ListOrphanedPayments(ctx context.Context, cutoff time.Time) ([]domain.Transaction, error) {
+	rows, err := r.pool.Query(ctx, `SELECT pt.order_id::text,pt.provider,pt.reference,pt.amount_minor,pt.currency,pt.status,COALESCE(pt.checkout_url,'') FROM payment_transactions pt JOIN orders o ON o.id=pt.order_id WHERE pt.status='pending' AND o.payment_status='pending_payment' AND pt.created_at<$1 ORDER BY pt.created_at LIMIT 500`, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("list orphaned pending payments: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domain.Transaction, 0)
+	for rows.Next() {
+		var item domain.Transaction
+		if err := rows.Scan(&item.OrderID, &item.Provider, &item.Reference, &item.AmountMinor, &item.Currency, &item.Status, &item.CheckoutURL); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 func (r *Repository) RestaurantID(ctx context.Context, orderID string) (string, error) {

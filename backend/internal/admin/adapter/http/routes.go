@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,6 +29,7 @@ type Operations interface {
 type Handler struct {
 	operations Operations
 	admins     AdminChecker
+	dlq        usecase.DLQInspector
 }
 
 type AdminChecker interface {
@@ -47,6 +49,7 @@ func NewHandler(operations *usecase.Operations, database *pgxpool.Pool) *Handler
 func NewHandlerWithAdminChecker(operations Operations, admins AdminChecker) *Handler {
 	return &Handler{operations: operations, admins: admins}
 }
+func (h *Handler) WithDLQ(dlq usecase.DLQInspector) *Handler { h.dlq = dlq; return h }
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
 	r.Use(h.adminRequired)
@@ -59,7 +62,44 @@ func (h *Handler) Routes() chi.Router {
 	r.Get("/ledger/summary", h.ledgerSummary)
 	r.Get("/ledger/entries", h.ledgerEntries)
 	r.Post("/couriers/{id}/settle-cod", h.settleCOD)
+	r.Get("/ops/dlq", h.listDLQ)
+	r.Post("/ops/dlq/{queue}/{task_id}/retry", h.retryDLQ)
+	r.Delete("/ops/dlq/{queue}/{task_id}", h.deleteDLQ)
 	return r
+}
+func (h *Handler) listDLQ(w http.ResponseWriter, r *http.Request) {
+	if h.dlq == nil {
+		writeError(w, errors.New("DLQ inspector unavailable"))
+		return
+	}
+	tasks, depths, err := h.dlq.List(r.Context())
+	write(w, map[string]any{"tasks": tasks, "queue_depths": depths}, err)
+}
+func (h *Handler) retryDLQ(w http.ResponseWriter, r *http.Request) {
+	if h.dlq == nil {
+		writeError(w, errors.New("DLQ inspector unavailable"))
+		return
+	}
+	queue, id := chi.URLParam(r, "queue"), chi.URLParam(r, "task_id")
+	if err := h.dlq.Retry(r.Context(), queue, id); err != nil {
+		write(w, nil, err)
+		return
+	}
+	slog.WarnContext(r.Context(), "admin replayed dead-letter task", "admin_id", r.Header.Get("X-User-ID"), "queue", queue, "task_id", id)
+	write(w, map[string]bool{"ok": true}, nil)
+}
+func (h *Handler) deleteDLQ(w http.ResponseWriter, r *http.Request) {
+	if h.dlq == nil {
+		writeError(w, errors.New("DLQ inspector unavailable"))
+		return
+	}
+	queue, id := chi.URLParam(r, "queue"), chi.URLParam(r, "task_id")
+	if err := h.dlq.Delete(r.Context(), queue, id); err != nil {
+		write(w, nil, err)
+		return
+	}
+	slog.WarnContext(r.Context(), "admin acknowledged dead-letter task", "admin_id", r.Header.Get("X-User-ID"), "queue", queue, "task_id", id)
+	write(w, map[string]bool{"ok": true}, nil)
 }
 func (h *Handler) overview(w http.ResponseWriter, r *http.Request) {
 	out, err := h.operations.Overview(r.Context())

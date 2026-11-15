@@ -198,6 +198,61 @@ func (s *Service) Poll(ctx context.Context, provider domain.Provider, reference 
 	return nil
 }
 
+// ReconcileOrphanedPayments verifies old pending intents independently of polling tasks.
+func (s *Service) ReconcileOrphanedPayments(ctx context.Context) error {
+	repository, ok := s.repository.(OrphanedPaymentRepository)
+	if !ok {
+		return errors.New("orphaned payment reconciliation unavailable")
+	}
+	items, err := repository.ListOrphanedPayments(ctx, time.Now().UTC().Add(-10*time.Minute))
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, payment := range items {
+		gateway, exists := s.gateways.Gateway(payment.Provider)
+		if !exists {
+			failures = append(failures, fmt.Errorf("gateway %s unavailable", payment.Provider))
+			continue
+		}
+		verification, err := gateway.Verify(ctx, payment.Reference)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("verify payment %s: %w", payment.Reference, err))
+			continue
+		}
+		if verification.Reference != payment.Reference || verification.AmountMinor != payment.AmountMinor || !strings.EqualFold(verification.Currency, payment.Currency) {
+			failures = append(failures, fmt.Errorf("verification mismatch for payment %s", payment.Reference))
+			continue
+		}
+		switch verification.Status {
+		case domain.Paid:
+			orderID, transitioned, err := s.repository.Confirm(ctx, payment.Provider, payment.Reference, verification.AmountMinor, verification.Currency)
+			if err != nil {
+				failures = append(failures, err)
+				continue
+			}
+			if transitioned {
+				s.afterPaid(ctx, payment.Provider, payment.Reference, orderID)
+			}
+		case domain.Failed, domain.Pending:
+			orderID, transitioned, err := s.repository.FailAndRestore(ctx, payment.Provider, payment.Reference)
+			if err != nil {
+				failures = append(failures, err)
+				continue
+			}
+			if transitioned {
+				s.publishCancelled(ctx, orderID)
+				if s.queue != nil {
+					_ = s.queue.CancelPolling(ctx, payment.Provider, payment.Reference)
+				}
+			}
+		default:
+			failures = append(failures, fmt.Errorf("unknown verification status for payment %s", payment.Reference))
+		}
+	}
+	return errors.Join(failures...)
+}
+
 func (s *Service) afterPaid(ctx context.Context, provider domain.Provider, reference, orderID string) {
 	s.publishStatus(ctx, orderID, "PAID")
 	if s.queue == nil {

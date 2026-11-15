@@ -66,6 +66,36 @@ func (s *CartStore) Release(ctx context.Context, userID, key string) error {
 	return s.client.Del(ctx, idempotencyKey(userID, key)).Err()
 }
 
+// CleanupEphemeralLocks removes malformed lock keys that lost their required TTL.
+// Normal abandoned locks expire automatically; this is a periodic safety repair.
+func (s *CartStore) CleanupEphemeralLocks(ctx context.Context) error {
+	for _, pattern := range []string{"mesob:group-cart-conversion:*", "mesob:order-idempotency:*"} {
+		var cursor uint64
+		for {
+			keys, next, err := s.client.Scan(ctx, cursor, pattern, 200).Result()
+			if err != nil {
+				return err
+			}
+			for _, key := range keys {
+				ttl, err := s.client.TTL(ctx, key).Result()
+				if err != nil {
+					return err
+				}
+				if ttl == -1 {
+					if err := s.client.Del(ctx, key).Err(); err != nil {
+						return err
+					}
+				}
+			}
+			cursor = next
+			if cursor == 0 {
+				break
+			}
+		}
+	}
+	return nil
+}
+
 func (s *CartStore) ExpireConverted(ctx context.Context, token string) error {
 	return s.client.Del(ctx, cartKey(token), cartConversionKey(token)).Err()
 }

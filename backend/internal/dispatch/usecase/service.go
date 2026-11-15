@@ -136,6 +136,25 @@ func (s *Service) StartDispatch(ctx context.Context, orderID string) error {
 	return s.tasks.ScheduleFindCourier(ctx, domain.OrderID(orderID), domain.TierOne, 0)
 }
 
+func (s *Service) EscalateStaleDispatches(ctx context.Context) error {
+	reader, ok := s.repository.(StaleDispatchReader)
+	if !ok {
+		return errors.New("stale dispatch reconciliation unavailable")
+	}
+	orders, err := reader.StaleDispatchOrders(ctx, time.Now().UTC().Add(-10*time.Minute))
+	if err != nil {
+		return err
+	}
+	var failures []error
+	for _, orderID := range orders {
+		if err := s.tasks.ScheduleFindCourier(ctx, orderID, domain.TierThree, 0); err != nil {
+			_ = s.repository.MarkManualIntervention(ctx, orderID)
+			failures = append(failures, fmt.Errorf("escalate order %s: %w", orderID, err))
+		}
+	}
+	return errors.Join(failures...)
+}
+
 func (s *Service) FindCourier(ctx context.Context, orderID domain.OrderID, tier domain.Tier) error {
 	if tier.RadiusKM() == 0 {
 		return domain.ErrInvalidOrder

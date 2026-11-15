@@ -61,3 +61,7 @@ type OfferNotifier interface {
 type DispatchStarter interface {
 	StartDispatch(context.Context, string) error
 }
+
+type StaleDispatchReader interface {
+	StaleDispatchOrders(context.Context, time.Time) ([]domain.OrderID, error)
+}

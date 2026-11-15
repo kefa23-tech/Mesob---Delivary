@@ -390,6 +390,27 @@ paths:
       operationId: adminReplayDeadLetterJob
       parameters: [{ $ref: '#/components/parameters/JobId' }]
       responses: { '202': { description: Replay accepted } }
+  /admin/ops/dlq:
+    get:
+      tags: [Admin]
+      operationId: adminListOpsDLQ
+      responses: { '200': { description: Archived Asynq tasks and queue depths, content: { application/json: { schema: { $ref: '#/components/schemas/AdminDLQResponse' } } } }, '403': { description: Active administrator role required } }
+  /admin/ops/dlq/{queue}/{task_id}/retry:
+    post:
+      tags: [Admin]
+      operationId: adminRetryOpsDLQTask
+      parameters:
+        - { name: queue, in: path, required: true, schema: { type: string, enum: [critical, default, low, payments, dispatch] } }
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: Archived task re-enqueued }, '403': { description: Active administrator role required }, '404': { $ref: '#/components/responses/NotFound' } }
+  /admin/ops/dlq/{queue}/{task_id}:
+    delete:
+      tags: [Admin]
+      operationId: adminDeleteOpsDLQTask
+      parameters:
+        - { name: queue, in: path, required: true, schema: { type: string, enum: [critical, default, low, payments, dispatch] } }
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: Archived task acknowledged and deleted }, '403': { description: Active administrator role required }, '404': { $ref: '#/components/responses/NotFound' } }
 components:
   securitySchemes:
     bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
@@ -471,6 +492,8 @@ components:
     AdminOverview: { type: object, required: [daily_gmv_minor, active_orders, stuck_orders], properties: { daily_gmv_minor: { type: integer, format: int64 }, active_orders: { type: integer, format: int64 }, stuck_orders: { type: integer } } }
     Dispute: { type: object, required: [id, status], properties: { id: { type: string, format: uuid }, order_id: { type: string, format: uuid }, status: { type: string }, resolution: { type: string } } }
     ResolveDisputeRequest: { type: object, required: [resolution], properties: { resolution: { type: string }, refund_minor: { type: integer, format: int64, minimum: 0 } } }
+    AdminDLQTask: { type: object, required: [id, queue, type, payload_summary, last_error, retry_count, last_failed_at], properties: { id: { type: string }, queue: { type: string }, type: { type: string }, payload: { type: string }, payload_summary: { type: string }, last_error: { type: string }, retry_count: { type: integer }, last_failed_at: { type: string, format: date-time } } }
+    AdminDLQResponse: { type: object, required: [tasks, queue_depths], properties: { tasks: { type: array, items: { $ref: '#/components/schemas/AdminDLQTask' } }, queue_depths: { type: object, additionalProperties: { type: integer, format: int64 } } } }
     DeadLetterJob: { type: object, required: [id, job_type, status], properties: { id: { type: string, format: uuid }, job_type: { type: string }, status: { type: string }, error_message: { type: string }, attempts: { type: integer }, created_at: { type: string, format: date-time } } }
     MessageResponse: { type: object, properties: { message: { type: string } } }
     Error: { type: object, required: [code, message], properties: { code: { type: string }, message: { type: string }, request_id: { type: string } } }

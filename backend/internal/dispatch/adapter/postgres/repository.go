@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -15,6 +16,23 @@ import (
 )
 
 type Repository struct{ pool *pgxpool.Pool }
+
+func (r *Repository) StaleDispatchOrders(ctx context.Context, cutoff time.Time) ([]domain.OrderID, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text FROM orders WHERE courier_id IS NULL AND status IN ('ACCEPTED','PREPARING') AND updated_at<$1 ORDER BY updated_at LIMIT 200`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	orders := make([]domain.OrderID, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		orders = append(orders, domain.OrderID(id))
+	}
+	return orders, rows.Err()
+}
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
 

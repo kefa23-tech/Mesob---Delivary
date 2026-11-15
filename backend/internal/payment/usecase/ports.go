@@ -15,6 +15,10 @@ type Repository interface {
 	FailAndRestore(context.Context, domain.Provider, string) (orderID string, transitioned bool, err error)
 }
 
+type OrphanedPaymentRepository interface {
+	ListOrphanedPayments(context.Context, time.Time) ([]domain.Transaction, error)
+}
+
 type Queue interface {
 	SchedulePoll(context.Context, domain.Provider, string, int, time.Duration) error
 	CancelPolling(context.Context, domain.Provider, string) error

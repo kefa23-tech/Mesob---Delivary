@@ -13,8 +13,13 @@ import (
 
 type fakeRepository struct {
 	transaction        paymentdomain.Transaction
+	orphaned           []paymentdomain.Transaction
 	confirms, failures int
 	transitioned       bool
+}
+
+func (r *fakeRepository) ListOrphanedPayments(context.Context, time.Time) ([]paymentdomain.Transaction, error) {
+	return r.orphaned, nil
 }
 
 func (r *fakeRepository) ResolveProvider(context.Context, string, string) (paymentdomain.Provider, error) {
@@ -142,5 +147,19 @@ func TestWebhookRejectsAmountMismatch(t *testing.T) {
 	body := []byte(`{"tx_ref":"order-4","status":"success"}`)
 	if err := service.HandleWebhook(context.Background(), paymentdomain.Chapa, body); !errors.Is(err, paymentdomain.ErrInvalidPayment) {
 		t.Fatalf("expected amount mismatch error, got %v", err)
+	}
+}
+
+func TestOrphanedPaymentReconcilerFinalizesVerifiedPayment(t *testing.T) {
+	payment := paymentdomain.Transaction{OrderID: "orphan-order", Provider: paymentdomain.Chapa, Reference: "orphan-ref", AmountMinor: 4500, Currency: "ETB", Status: paymentdomain.Pending}
+	repo := &fakeRepository{transaction: payment, orphaned: []paymentdomain.Transaction{payment}}
+	gateway := &fakeGateway{result: paymentdomain.Verification{Status: paymentdomain.Paid, AmountMinor: 4500, Currency: "ETB"}}
+	queue := &fakeQueue{}
+	service := usecase.NewService(repo, fakeGateways{paymentdomain.Chapa: gateway}, queue, "https://api.test", "https://web.test")
+	if err := service.ReconcileOrphanedPayments(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.confirms != 1 || gateway.calls != 1 || queue.notifications != 1 {
+		t.Fatalf("confirm=%d verifies=%d notifications=%d", repo.confirms, gateway.calls, queue.notifications)
 	}
 }

@@ -16,3 +16,9 @@ type DeadLetterQueue interface {
 	Depth(context.Context) (int64, error)
 	Replay(context.Context, int64) error
 }
+
+type DLQInspector interface {
+	List(context.Context) ([]domain.DeadLetterTask, map[string]int64, error)
+	Retry(context.Context, string, string) error
+	Delete(context.Context, string, string) error
+}
