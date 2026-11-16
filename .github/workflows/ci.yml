@@ -81,6 +81,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
+      - name: Validate production Compose and monitoring configuration
+        env:
+          MESOB_DOMAIN: mesob.example.test
+          ADMIN_DOMAIN: admin.mesob.example.test
+          POSTGRES_PASSWORD: ci-postgres-password
+          POSTGRES_USER: mesob
+          POSTGRES_DB: mesob
+          GRAFANA_ADMIN_PASSWORD: ci-only-grafana-password
+          DATABASE_URL: postgres://mesob:ci-postgres-password@postgres:5432/mesob?sslmode=disable
+          JWT_SECRET: ci-only-secret-at-least-32-characters-long
+        run: |
+          docker compose -f docker-compose.prod.yml config --quiet
+          docker run --rm \
+            --entrypoint=/bin/promtool \
+            -v "${GITHUB_WORKSPACE}/deploy/monitoring:/etc/prometheus:ro" \
+            prom/prometheus:v3.8.0 \
+            check config /etc/prometheus/prometheus.yml
+          jq -e . deploy/monitoring/mesob-production.json > /dev/null
       - name: Build production services
         env:
           MESOB_DOMAIN: mesob.example.test
@@ -88,6 +106,7 @@ jobs:
           POSTGRES_PASSWORD: ci-postgres-password
           POSTGRES_USER: mesob
           POSTGRES_DB: mesob
+          GRAFANA_ADMIN_PASSWORD: ci-only-grafana-password
           DATABASE_URL: postgres://mesob:ci-postgres-password@postgres:5432/mesob?sslmode=disable
           JWT_SECRET: ci-only-secret-at-least-32-characters-long
         run: docker compose -f docker-compose.prod.yml build
