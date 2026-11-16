@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
@@ -83,7 +84,7 @@ var defaultProcessRole = "api"
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	if err := run(context.Background(), config{
-		Address:               envOr("API_ADDRESS", ":8080"),
+		Address:               ipv4ListenAddress(envOr("API_ADDRESS", ":"+envOr("PORT", "8080"))),
 		DatabaseURL:           envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/mesob?sslmode=disable"),
 		MigrationsPath:        envOr("MIGRATIONS_PATH", "migrations"),
 		RedisURL:              envOr("REDIS_URL", "redis://localhost:6379/0"),
@@ -104,6 +105,16 @@ func main() {
 		logger.Error("api stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+// ipv4ListenAddress keeps the configured port but binds the API on all IPv4
+// interfaces so Railway's IPv4 edge proxy can reach the process.
+func ipv4ListenAddress(address string) string {
+	_, port, err := net.SplitHostPort(address)
+	if err != nil {
+		port = strings.TrimPrefix(address, ":")
+	}
+	return net.JoinHostPort("0.0.0.0", port)
 }
 
 func run(parent context.Context, cfg config, logger *slog.Logger) error {

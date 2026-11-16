@@ -71,7 +71,7 @@ services:
     restart: unless-stopped
     environment: &backend_environment
       PROCESS_ROLE: api
-      API_ADDRESS: :8080
+      API_ADDRESS: 0.0.0.0:8080
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
       REDIS_URL: ${REDIS_URL:?set REDIS_URL}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
