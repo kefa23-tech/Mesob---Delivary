@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -17,6 +18,15 @@ import (
 type Repository struct{ pool *pgxpool.Pool }
 
 func NewRepository(pool *pgxpool.Pool) *Repository { return &Repository{pool: pool} }
+
+// GlobalBalance returns the signed sum of all immutable journal lines.
+func (r *Repository) GlobalBalance(ctx context.Context) (int64, error) {
+	var total int64
+	if err := r.pool.QueryRow(ctx, `SELECT COALESCE(SUM(amount_minor), 0) FROM ledger_lines`).Scan(&total); err != nil {
+		return 0, fmt.Errorf("sum global ledger lines: %w", err)
+	}
+	return total, nil
+}
 
 func (r *Repository) Overview(ctx context.Context) (domain.Overview, error) {
 	var out domain.Overview
