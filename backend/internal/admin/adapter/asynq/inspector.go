@@ -5,12 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/hibiken/asynq"
 	"github.com/mesob-delivery/backend/internal/admin/domain"
+	"github.com/mesob-delivery/backend/internal/platform/redisconfig"
 )
 
 var queues = []string{"critical", "default", "low", "payments", "dispatch"}
@@ -87,24 +86,6 @@ func valid(queue, id string) bool {
 	return false
 }
 
-func parseRedisOptions(raw string) (asynq.RedisClientOpt, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return asynq.RedisClientOpt{}, fmt.Errorf("parse Asynq Redis URL: %w", err)
-	}
-	if u.Host == "" {
-		return asynq.RedisClientOpt{}, errors.New("redis URL must include host")
-	}
-	opt := asynq.RedisClientOpt{Addr: u.Host}
-	if u.User != nil {
-		opt.Username = u.User.Username()
-		opt.Password, _ = u.User.Password()
-	}
-	if path := strings.TrimPrefix(u.Path, "/"); path != "" {
-		opt.DB, err = strconv.Atoi(path)
-		if err != nil {
-			return asynq.RedisClientOpt{}, fmt.Errorf("invalid Redis database: %w", err)
-		}
-	}
-	return opt, nil
+func parseRedisOptions(raw string) (asynq.RedisConnOpt, error) {
+	return redisconfig.ParseAsynqURI(raw)
 }

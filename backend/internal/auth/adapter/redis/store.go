@@ -4,15 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/mesob-delivery/backend/internal/auth/domain"
-	"github.com/redis/go-redis/v9"
 	"time"
+
+	"github.com/mesob-delivery/backend/internal/auth/domain"
+	"github.com/mesob-delivery/backend/internal/platform/redisconfig"
+	"github.com/redis/go-redis/v9"
 )
 
 type Store struct{ client *redis.Client }
 
 func New(url string) (*Store, error) {
-	options, err := redis.ParseURL(url)
+	options, err := redisconfig.ParseGoRedisURL(url)
 	if err != nil {
 		return nil, fmt.Errorf("parse Redis URL: %w", err)
 	}

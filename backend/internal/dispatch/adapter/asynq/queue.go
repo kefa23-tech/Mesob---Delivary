@@ -3,15 +3,13 @@ package asynqadapter
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/mesob-delivery/backend/internal/dispatch/domain"
+	"github.com/mesob-delivery/backend/internal/platform/redisconfig"
 )
 
 const (
@@ -58,24 +56,6 @@ type dispatchPayload struct {
 	Tier    domain.Tier    `json:"tier"`
 }
 
-func redisOptions(raw string) (asynq.RedisClientOpt, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return asynq.RedisClientOpt{}, err
-	}
-	if u.Host == "" {
-		return asynq.RedisClientOpt{}, errors.New("redis URL must include host")
-	}
-	opt := asynq.RedisClientOpt{Addr: u.Host}
-	if u.User != nil {
-		opt.Username = u.User.Username()
-		opt.Password, _ = u.User.Password()
-	}
-	if p := strings.TrimPrefix(u.Path, "/"); p != "" {
-		opt.DB, err = strconv.Atoi(p)
-		if err != nil {
-			return asynq.RedisClientOpt{}, err
-		}
-	}
-	return opt, nil
+func redisOptions(raw string) (asynq.RedisConnOpt, error) {
+	return redisconfig.ParseAsynqURI(raw)
 }

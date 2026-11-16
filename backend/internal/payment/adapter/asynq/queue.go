@@ -6,13 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/mesob-delivery/backend/internal/payment/domain"
+	"github.com/mesob-delivery/backend/internal/platform/redisconfig"
 	"github.com/mesob-delivery/backend/internal/platform/workerobs"
 	"github.com/mesob-delivery/backend/internal/telemetry"
 )
@@ -177,27 +176,8 @@ func NewWorker(redisURL string, paymentPoller poller, notifications notifier, ha
 func (w *Worker) Run() error { return w.server.Run(w.mux) }
 func (w *Worker) Shutdown()  { w.server.Shutdown() }
 
-func redisOptions(raw string) (asynq.RedisClientOpt, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return asynq.RedisClientOpt{}, fmt.Errorf("parse Asynq Redis URL: %w", err)
-	}
-	if u.Host == "" {
-		return asynq.RedisClientOpt{}, errors.New("redis URL must include host")
-	}
-	opt := asynq.RedisClientOpt{Addr: u.Host}
-	if u.User != nil {
-		opt.Username = u.User.Username()
-		opt.Password, _ = u.User.Password()
-	}
-	if path := strings.TrimPrefix(u.Path, "/"); path != "" {
-		db, err := strconv.Atoi(path)
-		if err != nil {
-			return asynq.RedisClientOpt{}, fmt.Errorf("invalid Redis database: %w", err)
-		}
-		opt.DB = db
-	}
-	return opt, nil
+func redisOptions(raw string) (asynq.RedisConnOpt, error) {
+	return redisconfig.ParseAsynqURI(raw)
 }
 func pollTaskID(provider domain.Provider, reference string, attempt int) string {
 	return fmt.Sprintf("payment-poll:%s:%s:%d", strings.ToLower(string(provider)), reference, attempt)

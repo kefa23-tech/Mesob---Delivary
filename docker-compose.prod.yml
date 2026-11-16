@@ -73,7 +73,7 @@ services:
       PROCESS_ROLE: api
       API_ADDRESS: :8080
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: ${REDIS_URL:?set REDIS_URL}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       WEB_APP_URL: https://${MESOB_DOMAIN:?set MESOB_DOMAIN}
       PUBLIC_API_URL: https://${MESOB_DOMAIN:?set MESOB_DOMAIN}
@@ -108,7 +108,7 @@ services:
     environment:
       <<: *backend_environment
       PROCESS_ROLE: worker
-    entrypoint: ["/app/mesob-worker"]
+    command: ["/app/mesob-worker"]
     depends_on:
       api: { condition: service_healthy }
       postgres: { condition: service_healthy }

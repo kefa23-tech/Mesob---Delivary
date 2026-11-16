@@ -3,17 +3,16 @@ package telemetry
 import (
 	"bufio"
 	"context"
-	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/hibiken/asynq"
+	"github.com/mesob-delivery/backend/internal/platform/redisconfig"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -150,7 +149,7 @@ func AsynqMiddleware() asynq.MiddlewareFunc {
 		return asynq.HandlerFunc(func(ctx context.Context, task *asynq.Task) error {
 			queue, _ := asynq.GetQueueName(ctx)
 			started := time.Now()
-		err := next.ProcessTask(ctx, task)
+			err := next.ProcessTask(ctx, task)
 			asynqTaskDuration.WithLabelValues(queue, task.Type()).Observe(time.Since(started).Seconds())
 			return err
 		})
@@ -247,24 +246,6 @@ func StartLedgerInvariantCollector(ctx context.Context, reader ledgerBalanceRead
 	}()
 }
 
-func redisOptions(raw string) (asynq.RedisClientOpt, error) {
-	u, err := url.Parse(raw)
-	if err != nil {
-		return asynq.RedisClientOpt{}, fmt.Errorf("parse redis URL: %w", err)
-	}
-	if u.Host == "" {
-		return asynq.RedisClientOpt{}, fmt.Errorf("redis URL must include host")
-	}
-	opt := asynq.RedisClientOpt{Addr: u.Host}
-	if u.User != nil {
-		opt.Username = u.User.Username()
-		opt.Password, _ = u.User.Password()
-	}
-	if path := strings.TrimPrefix(u.Path, "/"); path != "" {
-		opt.DB, err = strconv.Atoi(path)
-		if err != nil {
-			return asynq.RedisClientOpt{}, fmt.Errorf("parse redis database: %w", err)
-		}
-	}
-	return opt, nil
+func redisOptions(raw string) (asynq.RedisConnOpt, error) {
+	return redisconfig.ParseAsynqURI(raw)
 }

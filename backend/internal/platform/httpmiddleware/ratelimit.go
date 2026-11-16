@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mesob-delivery/backend/internal/platform/redisconfig"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -35,7 +36,7 @@ type RateLimiter struct {
 }
 
 func NewRateLimiter(redisURL string) (*RateLimiter, error) {
-	options, err := redis.ParseURL(redisURL)
+	options, err := redisconfig.ParseGoRedisURL(redisURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse rate limiter redis URL: %w", err)
 	}
