@@ -12,6 +12,7 @@
     "@mesob/api-contract": "file:../api",
     "@sentry/nextjs": "^11.12.0",
     "@tanstack/react-query": "^5.107.1",
+    "@upstash/redis": "^1.41.0",
     "leaflet": "^1.9.4",
     "lucide-react": "0.468.0",
     "next": "15.5.29",
