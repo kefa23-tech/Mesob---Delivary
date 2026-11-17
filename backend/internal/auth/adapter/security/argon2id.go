@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"golang.org/x/crypto/argon2"
+	"golang.org/x/crypto/bcrypt"
 	"strings"
 )
 
@@ -20,6 +21,12 @@ func (Argon2id) Hash(password string) (string, error) {
 	return fmt.Sprintf("$argon2id$v=19$m=65536,t=1,p=4$%s$%s", base64.RawStdEncoding.EncodeToString(salt), base64.RawStdEncoding.EncodeToString(hash)), nil
 }
 func (Argon2id) Compare(encoded, password string) error {
+	// Continue to accept bcrypt hashes created by older/manual provisioning.
+	// New passwords are always generated using Argon2id in Hash.
+	if strings.HasPrefix(encoded, "$2") {
+		return bcrypt.CompareHashAndPassword([]byte(encoded), []byte(password))
+	}
+
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return fmt.Errorf("invalid password hash")

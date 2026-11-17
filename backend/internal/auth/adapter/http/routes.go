@@ -93,11 +93,11 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie("mesob_refresh"); err == nil {
 		_ = h.service.Logout(r.Context(), cookie.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: "mesob_refresh", Value: "", Path: "/api/v1/auth", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "mesob_refresh", Value: "", Path: "/api/v1/auth", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode})
 	writeJSON(w, http.StatusNoContent, nil)
 }
 func setRefreshCookie(w http.ResponseWriter, value string) {
-	http.SetCookie(w, &http.Cookie{Name: "mesob_refresh", Value: value, Path: "/api/v1/auth", HttpOnly: true, Secure: true, SameSite: http.SameSiteLaxMode, MaxAge: 30 * 24 * 60 * 60})
+	http.SetCookie(w, &http.Cookie{Name: "mesob_refresh", Value: value, Path: "/api/v1/auth", HttpOnly: true, Secure: true, SameSite: http.SameSiteNoneMode, MaxAge: 30 * 24 * 60 * 60})
 }
 func decode(w http.ResponseWriter, r *http.Request, target any) bool {
 	if err := json.NewDecoder(r.Body).Decode(target); err != nil {

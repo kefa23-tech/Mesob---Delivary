@@ -3,6 +3,8 @@ package postgres
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mesob-delivery/backend/internal/auth/domain"
 )
@@ -14,7 +16,7 @@ func (r *Repository) FindByPhone(ctx context.Context, phone string) (domain.User
 	return r.find(ctx, "phone", phone)
 }
 func (r *Repository) FindByEmail(ctx context.Context, email string) (domain.User, error) {
-	return r.find(ctx, "email", email)
+	return r.find(ctx, "LOWER(email)", strings.ToLower(strings.TrimSpace(email)))
 }
 func (r *Repository) find(ctx context.Context, column, value string) (domain.User, error) {
 	query := fmt.Sprintf("SELECT id::text, name, phone, COALESCE(email, ''), COALESCE(password_hash, ''), role FROM users WHERE %s = $1 AND status = 'active'", column)
