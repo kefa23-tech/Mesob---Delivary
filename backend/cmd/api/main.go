@@ -81,8 +81,12 @@ type config struct {
 
 var defaultProcessRole = "api"
 
+const vercelAdminOrigin = "https://mesob-delivery-admin.vercel.app"
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	corsOrigins := strings.Split(envOr("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"), ",")
+	corsOrigins = append(corsOrigins, vercelAdminOrigin)
 	if err := run(context.Background(), config{
 		Address:               ipv4ListenAddress(envOr("API_ADDRESS", ":"+envOr("PORT", "8080"))),
 		DatabaseURL:           envOr("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/mesob?sslmode=disable"),
@@ -100,7 +104,7 @@ func main() {
 		TelebirrAPIKey:        os.Getenv("TELEBIRR_API_KEY"),
 		TelebirrWebhookSecret: os.Getenv("TELEBIRR_WEBHOOK_SECRET"),
 		ProcessRole:           envOr("PROCESS_ROLE", defaultProcessRole),
-		CORSOrigins:           strings.Split(envOr("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001"), ","),
+		CORSOrigins:           corsOrigins,
 	}, logger); err != nil {
 		logger.Error("api stopped", "error", err)
 		os.Exit(1)
