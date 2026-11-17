@@ -170,7 +170,7 @@ func StartAsynqQueueCollector(ctx context.Context, redisURL string, logger *slog
 	refresh := func() {
 		for _, queue := range []string{"critical", "default", "low", "payments", "dispatch"} {
 			info, err := inspector.GetQueueInfo(queue)
-			if errors.Is(err, asynq.ErrQueueNotFound) {
+			if errors.Is(err, asynq.ErrQueueNotFound) || (err != nil && strings.Contains(err.Error(), "NOT_FOUND")) {
 				info = &asynq.QueueInfo{}
 			} else if err != nil {
 				logger.Warn("read Asynq queue metrics", "queue", queue, "error", err)
