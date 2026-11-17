@@ -3,6 +3,7 @@ package telemetry
 import (
 	"bufio"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -169,7 +170,9 @@ func StartAsynqQueueCollector(ctx context.Context, redisURL string, logger *slog
 	refresh := func() {
 		for _, queue := range []string{"critical", "default", "low", "payments", "dispatch"} {
 			info, err := inspector.GetQueueInfo(queue)
-			if err != nil {
+			if errors.Is(err, asynq.ErrQueueNotFound) {
+				info = &asynq.QueueInfo{}
+			} else if err != nil {
 				logger.Warn("read Asynq queue metrics", "queue", queue, "error", err)
 				continue
 			}
@@ -188,7 +191,7 @@ func StartAsynqQueueCollector(ctx context.Context, redisURL string, logger *slog
 	go func() {
 		defer close(done)
 		refresh()
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(60 * time.Second)
 		defer ticker.Stop()
 		for {
 			select {

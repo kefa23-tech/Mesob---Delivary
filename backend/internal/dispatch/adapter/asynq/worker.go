@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/hibiken/asynq"
 	"github.com/mesob-delivery/backend/internal/dispatch/usecase"
@@ -44,7 +45,14 @@ func NewWorker(redisURL string, service *usecase.Service) (*Worker, error) {
 		return service.HandleOfferTimeout(ctx, p.OrderID, p.Tier)
 	})
 	mux.HandleFunc(escalateDispatchTask, func(ctx context.Context, _ *asynq.Task) error { return service.EscalateStaleDispatches(ctx) })
-	server := asynq.NewServer(opt, asynq.Config{Concurrency: 12, Queues: map[string]int{QueueName: 5, "default": 1}, ErrorHandler: workerobs.ErrorHandler(slog.Default())})
+	server := asynq.NewServer(opt, asynq.Config{
+		Concurrency:              12,
+		Queues:                   map[string]int{QueueName: 5, "default": 1},
+		ErrorHandler:             workerobs.ErrorHandler(slog.Default()),
+		TaskCheckInterval:        5 * time.Second,
+		DelayedTaskCheckInterval: 15 * time.Second,
+		HealthCheckInterval:      30 * time.Second,
+	})
 	mux.Use(telemetry.AsynqMiddleware())
 	return &Worker{server: server, mux: mux}, nil
 }

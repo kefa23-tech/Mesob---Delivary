@@ -169,7 +169,14 @@ func NewWorker(redisURL string, paymentPoller poller, notifications notifier, ha
 	if reconciler, ok := paymentPoller.(orphanedPaymentReconciler); ok {
 		mux.HandleFunc(reconcilePaymentsTaskType, func(ctx context.Context, _ *asynq.Task) error { return reconciler.ReconcileOrphanedPayments(ctx) })
 	}
-	server := asynq.NewServer(opt, asynq.Config{Concurrency: 8, Queues: map[string]int{QueueName: 5, "default": 1}, ErrorHandler: workerobs.ErrorHandler(slog.Default())})
+	server := asynq.NewServer(opt, asynq.Config{
+		Concurrency:              8,
+		Queues:                   map[string]int{QueueName: 5, "default": 1},
+		ErrorHandler:             workerobs.ErrorHandler(slog.Default()),
+		TaskCheckInterval:        5 * time.Second,
+		DelayedTaskCheckInterval: 15 * time.Second,
+		HealthCheckInterval:      30 * time.Second,
+	})
 	mux.Use(telemetry.AsynqMiddleware())
 	return &Worker{server: server, mux: mux}, nil
 }
