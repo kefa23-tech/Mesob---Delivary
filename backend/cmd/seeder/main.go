@@ -12,8 +12,6 @@ import (
 )
 
 const (
-	adminEmail  = "hustlerw23@gmail.com"
-	initialPass = "Pa$$word!"
 	adminName   = "Admin"
 	adminRole   = "admin"
 	adminStatus = "active"
@@ -24,7 +22,11 @@ func main() {
 		fmt.Fprintln(os.Stderr, "seed admin:", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Admin account %s is ready. Existing password hashes are preserved.\n", adminEmail)
+	if reset, _ := resetPasswordEnabled(); reset {
+		fmt.Println("Admin account password reset and verified.")
+		return
+	}
+	fmt.Println("Admin account is ready. Existing password hashes are preserved.")
 }
 
 func seed() error {
@@ -32,12 +34,25 @@ func seed() error {
 	if databaseURL == "" {
 		return fmt.Errorf("DATABASE_URL is required")
 	}
+	adminEmail := strings.TrimSpace(os.Getenv("ADMIN_EMAIL"))
+	if adminEmail == "" {
+		return fmt.Errorf("ADMIN_EMAIL is required")
+	}
+	adminPassword := os.Getenv("ADMIN_PASSWORD")
+	if strings.TrimSpace(adminPassword) == "" {
+		return fmt.Errorf("ADMIN_PASSWORD is required")
+	}
 	phone := strings.TrimSpace(os.Getenv("ADMIN_PHONE"))
 	if phone == "" {
 		return fmt.Errorf("ADMIN_PHONE is required (users.phone is NOT NULL and UNIQUE)")
 	}
+	resetPassword, err := resetPasswordEnabled()
+	if err != nil {
+		return err
+	}
 
-	hash, err := (security.Argon2id{}).Hash(initialPass)
+	hasher := security.Argon2id{}
+	hash, err := hasher.Hash(adminPassword)
 	if err != nil {
 		return fmt.Errorf("hash initial password: %w", err)
 	}
@@ -51,17 +66,67 @@ func seed() error {
 	}
 	defer pool.Close()
 
-	const query = `
+	const preserveQuery = `
 		INSERT INTO public.users AS existing
 			(name, phone, email, password_hash, role, status)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (email) DO UPDATE SET
-			password_hash = COALESCE(existing.password_hash, EXCLUDED.password_hash),
-			role = EXCLUDED.role,
-			status = EXCLUDED.status,
-			updated_at = now()`
-	if _, err := pool.Exec(ctx, query, adminName, phone, adminEmail, hash, adminRole, adminStatus); err != nil {
+			password_hash = EXCLUDED.password_hash,
+			updated_at = now()
+		WHERE existing.password_hash IS NULL
+			AND existing.role = 'admin'
+			AND existing.status = 'active'`
+	const resetQuery = `
+		INSERT INTO public.users AS existing
+			(name, phone, email, password_hash, role, status)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (email) DO UPDATE SET
+			password_hash = EXCLUDED.password_hash,
+			updated_at = now()
+		WHERE existing.role = 'admin'
+			AND existing.status = 'active'`
+	query := preserveQuery
+	if resetPassword {
+		query = resetQuery
+	}
+	tag, err := pool.Exec(ctx, query, adminName, phone, adminEmail, hash, adminRole, adminStatus)
+	if err != nil {
 		return fmt.Errorf("upsert admin user: %w", err)
 	}
+	if tag.RowsAffected() == 0 {
+		var activeAdminExists bool
+		if err := pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM public.users WHERE email = $1 AND role = 'admin' AND status = 'active')`, adminEmail).Scan(&activeAdminExists); err != nil {
+			return fmt.Errorf("verify existing admin user: %w", err)
+		}
+		if !activeAdminExists {
+			return fmt.Errorf("email already belongs to a user who is not an active admin; existing account was left unchanged")
+		}
+	}
+	if resetPassword {
+		var role, status, storedHash string
+		if err := pool.QueryRow(ctx, `SELECT role, status, COALESCE(password_hash, '') FROM public.users WHERE email = $1`, adminEmail).Scan(&role, &status, &storedHash); err != nil {
+			return fmt.Errorf("verify reset admin account: %w", err)
+		}
+		if role != adminRole || status != adminStatus {
+			return fmt.Errorf("password reset target is not an active admin")
+		}
+		if !strings.HasPrefix(storedHash, "$argon2id$") {
+			return fmt.Errorf("stored password hash is not Argon2id")
+		}
+		if err := hasher.Compare(storedHash, adminPassword); err != nil {
+			return fmt.Errorf("verify stored Argon2id password hash: %w", err)
+		}
+	}
 	return nil
+}
+
+func resetPasswordEnabled() (bool, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("ADMIN_RESET_PASSWORD"))) {
+	case "", "false":
+		return false, nil
+	case "true":
+		return true, nil
+	default:
+		return false, fmt.Errorf("ADMIN_RESET_PASSWORD must be true or false")
+	}
 }

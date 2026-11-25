@@ -63,3 +63,26 @@ func TestVerifyOTPLocksAfterFiveFailures(t *testing.T) {
 		t.Fatalf("expected locked account, got %v", err)
 	}
 }
+
+func TestLoginAcceptsArgon2idHashFromSeeder(t *testing.T) {
+	store := memory.New()
+	password := "Pa$$word!"
+	hash, err := (security.Argon2id{}).Hash(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	user := domain.User{ID: "admin-id", Name: "Admin", Phone: "+251900000000", Email: "admin@example.test", PasswordHash: hash, Role: domain.RoleAdmin}
+	store.Email[user.Email] = user
+
+	svc := service(time.Now, store)
+	session, err := svc.Login(context.Background(), user.Email, password)
+	if err != nil {
+		t.Fatalf("login with seeder Argon2id hash: %v", err)
+	}
+	if session.User.Role != domain.RoleAdmin || session.AccessToken == "" {
+		t.Fatalf("expected an admin session with access token, got role %q", session.User.Role)
+	}
+	if _, err := svc.Login(context.Background(), user.Email, "wrong-password"); !errors.Is(err, domain.ErrInvalidCredentials) {
+		t.Fatalf("expected invalid credentials for wrong password, got %v", err)
+	}
+}
