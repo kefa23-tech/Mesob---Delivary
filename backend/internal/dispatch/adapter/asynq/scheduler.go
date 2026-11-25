@@ -2,6 +2,7 @@ package asynqadapter
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/hibiken/asynq"
 )
@@ -13,7 +14,7 @@ func NewScheduler(redisURL string) (*Scheduler, error) {
 	if err != nil {
 		return nil, err
 	}
-	scheduler := asynq.NewScheduler(opt, nil)
+	scheduler := asynq.NewScheduler(opt, &asynq.SchedulerOpts{HeartbeatInterval: 30 * time.Second})
 	if _, err := scheduler.Register("* * * * *", asynq.NewTask(escalateDispatchTask, nil), asynq.Queue(QueueName)); err != nil {
 		return nil, fmt.Errorf("register stale dispatch escalator: %w", err)
 	}

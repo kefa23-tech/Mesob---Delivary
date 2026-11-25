@@ -49,9 +49,10 @@ func NewWorker(redisURL string, service *usecase.Service) (*Worker, error) {
 		Concurrency:              12,
 		Queues:                   map[string]int{QueueName: 5, "default": 1},
 		ErrorHandler:             workerobs.ErrorHandler(slog.Default()),
-		TaskCheckInterval:        5 * time.Second,
+		TaskCheckInterval:        10 * time.Second,
 		DelayedTaskCheckInterval: 15 * time.Second,
-		HealthCheckInterval:      30 * time.Second,
+		HealthCheckInterval:      60 * time.Second,
+		JanitorInterval:          5 * time.Minute,
 	})
 	mux.Use(telemetry.AsynqMiddleware())
 	return &Worker{server: server, mux: mux}, nil

@@ -191,7 +191,7 @@ func StartAsynqQueueCollector(ctx context.Context, redisURL string, logger *slog
 	go func() {
 		defer close(done)
 		refresh()
-		ticker := time.NewTicker(60 * time.Second)
+		ticker := time.NewTicker(5 * time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
